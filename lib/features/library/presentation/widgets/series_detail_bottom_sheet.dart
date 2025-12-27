@@ -9,6 +9,7 @@ import 'package:port21/features/download/data/download_service.dart';
 
 import 'package:port21/core/utils/path_mapper.dart'; // Added
 import 'package:port21/features/library/application/file_verification_service.dart'; // Added
+import 'package:port21/features/player/application/video_launcher.dart'; // Added
 import 'package:go_router/go_router.dart'; // Added
 
 class SeriesDetailBottomSheet extends ConsumerWidget {
@@ -150,7 +151,7 @@ class SeriesDetailBottomSheet extends ConsumerWidget {
   }
 }
 
-class _SeasonExpansionTile extends StatelessWidget {
+class _SeasonExpansionTile extends ConsumerWidget {
   final int seasonNumber;
   final List<Episode> episodes;
   final int seriesTmdbId;
@@ -158,7 +159,10 @@ class _SeasonExpansionTile extends StatelessWidget {
   const _SeasonExpansionTile({required this.seasonNumber, required this.episodes, required this.seriesTmdbId});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Count available files
+    final availableCount = episodes.where((e) => e.hasFile).length;
+
     return Container(
       decoration: BoxDecoration(
          color: const Color(0xFF151515),
@@ -169,11 +173,35 @@ class _SeasonExpansionTile extends StatelessWidget {
         child: ExpansionTile(
           collapsedBackgroundColor: const Color(0xFF151515),
           backgroundColor: const Color(0xFF0A0A0A),
-          title: Text(
-            "SEASON $seasonNumber",
-            style: GoogleFonts.robotoCondensed(
-              fontWeight: FontWeight.w900, fontSize: 18, letterSpacing: 1.0, color: Colors.white,
-            ),
+          title: Row(
+            children: [
+              Text(
+                "SEASON $seasonNumber",
+                style: GoogleFonts.robotoCondensed(
+                  fontWeight: FontWeight.w900, fontSize: 18, letterSpacing: 1.0, color: Colors.white,
+                ),
+              ),
+              const Spacer(),
+              if (availableCount > 0)
+                TextButton.icon(
+                  onPressed: () {
+                     // Download Season Logic
+                     int queued = 0;
+                     for (final ep in episodes) {
+                       if (ep.hasFile && ep.path != null) {
+                          // Format: "S01E01 - Title"
+                          final title = "S${seasonNumber.toString().padLeft(2, '0')}E${ep.episodeNumber.toString().padLeft(2, '0')} - ${ep.title ?? 'Episode'}";
+                          ref.read(downloadServiceProvider).downloadFile(ep.path!, title);
+                          queued++;
+                       }
+                     }
+                     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Queued $queued episodes for download")));
+                  },
+                  icon: const Icon(Icons.download_for_offline, size: 18, color: Colors.tealAccent),
+                  label: const Text("DOWNLOAD SEASON", style: TextStyle(color: Colors.tealAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                  style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8)),
+                )
+            ],
           ),
           children: episodes.map((ep) => _EpisodeTile(episode: ep, seriesTmdbId: seriesTmdbId)).toList(),
         ),
@@ -279,11 +307,12 @@ class _EpisodeTileState extends ConsumerState<_EpisodeTile> {
                            if (absoluteUrl == null) {
                               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('File NOT FOUND on server.'), backgroundColor: Colors.red));
                            } else {
-                              final contentId = 'series_${widget.seriesTmdbId}_S${widget.episode.seasonNumber}E${widget.episode.episodeNumber}';
-                              context.push('/player', extra: {
-                                'url': absoluteUrl,
-                                'contentId': contentId,
-                              });
+                               final contentId = 'series_${widget.seriesTmdbId}_S${widget.episode.seasonNumber}E${widget.episode.episodeNumber}';
+                               VideoLauncher.launch(
+                                 context,
+                                 absoluteUrl,
+                                 contentId,
+                               );
                            }
                         }
                         if (mounted) setState(() => _isLoading = false);
@@ -298,7 +327,13 @@ class _EpisodeTileState extends ConsumerState<_EpisodeTile> {
           else
             IconButton(
               icon: const Icon(Icons.download_sharp, color: Colors.white70),
-              onPressed: () {},
+              onPressed: () {
+                 if (widget.episode.path != null) {
+                    final title = "S${widget.episode.seasonNumber.toString().padLeft(2, '0')}E${widget.episode.episodeNumber.toString().padLeft(2, '0')} - ${widget.episode.title ?? 'Episode'}";
+                    ref.read(downloadServiceProvider).downloadFile(widget.episode.path!, title);
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Download Queued")));
+                 }
+              },
             ),
         ],
       ),

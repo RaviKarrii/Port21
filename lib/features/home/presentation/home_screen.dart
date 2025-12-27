@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import '../../player/application/video_launcher.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../library/presentation/widgets/movie_detail_bottom_sheet.dart';
@@ -118,7 +119,11 @@ class _HeroSection extends ConsumerWidget {
                              ),
                              onPressed: () {
                                 // Play Action
-                                context.push('/player', extra: {'url': featured.isMovie ? (featured.originalItem as dynamic).path : '', 'contentId': featured.contentId});
+                                VideoLauncher.launch(
+                                  context,
+                                  featured.isMovie ? (featured.originalItem as dynamic).path : '',
+                                  featured.contentId,
+                                );
                              },
                              icon: const Icon(Icons.play_arrow),
                              label: const Text("PLAY"),
@@ -183,7 +188,11 @@ class _ContinueWatchingRail extends ConsumerWidget {
                       final item = items[index];
                       return GestureDetector(
                         onTap: () {
-                           context.push('/player', extra: {'url': (item.originalItem as dynamic).path, 'contentId': item.contentId});
+                           VideoLauncher.launch(
+                             context,
+                             (item.originalItem as dynamic).path,
+                             item.contentId,
+                           );
                         },
                         child: Container(
                           width: 220,

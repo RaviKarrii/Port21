@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_downloader/flutter_downloader.dart';
 import 'package:go_router/go_router.dart';
 import '../../player/presentation/player_screen.dart';
+import '../../player/application/video_launcher.dart';
 import '../data/download_service.dart' as svc;
 
 class DownloadScreen extends ConsumerStatefulWidget {
@@ -233,7 +234,7 @@ class _DownloadScreenState extends ConsumerState<DownloadScreen> {
                           icon: const Icon(Icons.play_arrow_sharp),
                           onPressed: () {
                             final path = '${task.savedDir}/${task.filename}';
-                            context.push('/player', extra: path);
+                            VideoLauncher.launch(context, path, null);
                           },
                           color: Colors.white,
                         )

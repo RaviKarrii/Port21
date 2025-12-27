@@ -6,6 +6,7 @@ import 'package:port21/features/library/application/file_verification_service.da
 import 'package:port21/features/settings/data/settings_repository.dart'; // For API key
 import 'package:port21/features/download/data/download_service.dart';
 import 'package:port21/features/player/presentation/player_screen.dart';
+import 'package:port21/features/player/application/video_launcher.dart';
 import 'package:port21/core/utils/path_mapper.dart';
 
 // Helper to construct image URL
@@ -172,10 +173,11 @@ class _MovieDetailBottomSheetState extends ConsumerState<MovieDetailBottomSheet>
                                 
                                // Navigation to player (GoRouter)
                                if (context.mounted) {
-                                  context.push('/player', extra: {
-                                    'url': absoluteUrl ?? ftpUrl,
-                                    'contentId': widget.movie.tmdbId.toString(),
-                                  });
+                                  VideoLauncher.launch(
+                                    context,
+                                    absoluteUrl ?? ftpUrl,
+                                    widget.movie.tmdbId.toString(),
+                                  );
                                   // We keep loading true slightly longer to prevent rapid re-taps during push
                                   await Future.delayed(const Duration(milliseconds: 500));
                                   if (mounted) setState(() => _isLoading = false);

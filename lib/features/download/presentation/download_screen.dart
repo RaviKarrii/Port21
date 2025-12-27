@@ -57,9 +57,11 @@ class _DownloadScreenState extends ConsumerState<DownloadScreen> {
     _bindBackgroundIsolate();
     FlutterDownloader.registerCallback(downloadCallback);
     
-    // Load initial Flutter tasks
-    _loadTasks();
-    _loadIsarTasks(); // Added
+    // Initialize Cleanup & Load
+    ref.read(svc.downloadServiceProvider).init().then((_) {
+       _loadTasks();
+       _loadIsarTasks(); 
+    });
     
     // Listen to manual SFTP events
     _streamSubscription = ref.read(svc.downloadServiceProvider).downloadStream.listen((event) {

@@ -249,9 +249,14 @@ class SftpStreamServer {
          }
          request.response.contentLength = contentLength;
          
-         debugPrint('STREAM: Serve $start-$end ($contentLength bytes)');
-         await request.response.addStream(_createStream(file, start, contentLength));
-          await request.response.close();
+         debugPrint('STREAM: Serve $start-$end ($contentLength bytes) [${request.method}]');
+         
+         if (request.method == 'HEAD') {
+             await request.response.close();
+         } else {
+             await request.response.addStream(_createStream(file, start, contentLength));
+             await request.response.close();
+         }
           
         } catch (e) {
           debugPrint('STREAM ERROR: $e');

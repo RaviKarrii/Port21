@@ -38,12 +38,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     super.initState();
     debugPrint("PlayerScreen Init: URL = ${widget.url}");
     
-    // Lock Orientation
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
+    // Lock Orientation (Post Frame to ensure it overrides previous screen)
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+       await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+       await SystemChrome.setPreferredOrientations([
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+       ]);
+    });
 
     // MediaKit Configuration with 64MB Buffer & Aggressive Caching
     _player = Player(configuration: const PlayerConfiguration(

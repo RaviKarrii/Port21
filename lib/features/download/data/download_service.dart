@@ -135,6 +135,27 @@ class DownloadService {
             contentId: contentId,
          ));
 
+         // PERSIST INITIAL STATE
+         final isar = _ref.read(isarProvider);
+         await isar.writeTxn(() async {
+            final existing = await isar.downloadedMedias.filter().contentIdEqualTo(contentId).findFirst();
+             if (existing != null) {
+                existing.status = 'downloading';
+                existing.path = '$saveDir/$title.mkv';
+                existing.streamUrl = url;
+                await isar.downloadedMedias.put(existing);
+             } else {
+                final newItem = DownloadedMedia()
+                  ..contentId = contentId
+                  ..title = title
+                  ..path = '$saveDir/$title.mkv'
+                  ..streamUrl = url
+                  ..status = 'downloading'
+                  ..downloadedAt = DateTime.now();
+                await isar.downloadedMedias.put(newItem);
+             }
+         });
+
         // 1. Resolve Path
          final resolvedUrl = await _ref.read(fileVerificationServiceProvider).verifyFileExists(
             url: url,
@@ -238,7 +259,7 @@ class DownloadService {
          ));
          
          // Update Isar to Completed
-         final isar = _ref.read(isarProvider);
+         // Reuse 'isar' from top of function
          await isar.writeTxn(() async {
             // Find existing or create new
             final existing = await isar.downloadedMedias.filter().contentIdEqualTo(contentId).findFirst();
@@ -336,6 +357,30 @@ class DownloadService {
               }
           }
           await isar.downloadedMedias.clear();
+      });
+  }
+
+  Future<void> init() async {
+      final isar = _ref.read(isarProvider);
+      await isar.writeTxn(() async {
+          // 1. Cleanup Partial ('downloading')
+          final partials = await isar.downloadedMedias.filter().statusEqualTo('downloading').findAll();
+          for (var p in partials) {
+              final file = File(p.path);
+              if (await file.exists()) {
+                  try { await file.delete(); } catch (_) {}
+              }
+              await isar.downloadedMedias.delete(p.id);
+          }
+
+          // 2. Validate Completed (Remove if file missing)
+          final completed = await isar.downloadedMedias.filter().statusEqualTo('completed').findAll();
+          for (var c in completed) {
+              final file = File(c.path);
+              if (!await file.exists()) {
+                  await isar.downloadedMedias.delete(c.id);
+              }
+          }
       });
   }
 }

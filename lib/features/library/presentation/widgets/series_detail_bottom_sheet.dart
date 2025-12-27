@@ -10,7 +10,9 @@ import 'package:port21/features/download/data/download_service.dart';
 import 'package:port21/core/utils/path_mapper.dart'; // Added
 import 'package:port21/features/library/application/file_verification_service.dart'; // Added
 import 'package:port21/features/player/application/video_launcher.dart'; // Added
-import 'package:go_router/go_router.dart'; // Added
+import 'package:go_router/go_router.dart';
+import 'package:isar/isar.dart'; // Added
+import 'package:port21/features/download/domain/downloaded_media.dart'; // Added
 
 class SeriesDetailBottomSheet extends ConsumerWidget {
   final Series series;
@@ -226,6 +228,24 @@ class _EpisodeTile extends ConsumerStatefulWidget {
 
 class _EpisodeTileState extends ConsumerState<_EpisodeTile> {
   bool _isLoading = false;
+  bool _isDownloaded = false; // Added state
+
+  @override
+  void initState() {
+    super.initState();
+    _checkDownloadStatus();
+  }
+
+  Future<void> _checkDownloadStatus() async {
+     final contentId = 'episode_${widget.seriesTmdbId}_s${widget.episode.seasonNumber}_e${widget.episode.episodeNumber}';
+     final isar = ref.read(isarProvider);
+     final media = await isar.downloadedMedias.filter().contentIdEqualTo(contentId).statusEqualTo('completed').findFirst();
+     if (mounted && media != null) {
+        setState(() {
+           _isDownloaded = true;
+        });
+     }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -280,68 +300,82 @@ class _EpisodeTileState extends ConsumerState<_EpisodeTile> {
               ],
             ),
           ),
-          if (isAvailable)
-            _isLoading 
+          if (isAvailable) ...[
+             _isLoading 
             ? const SizedBox(width: 48, height: 48, child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))))
-            : IconButton(
-              icon: const Icon(Icons.play_arrow_sharp, color: Colors.white),
-              onPressed: () async {
-                 // Play Logic Copy
-                  setState(() => _isLoading = true);
-                  if (widget.episode.path != null && widget.episode.path!.isNotEmpty) {
-                    final settings = ref.read(settingsRepositoryProvider).getSettings();
-                    final ftpUrl = PathMapper.mapToFtpUrl(
-                        remotePath: widget.episode.path!,
-                        remotePrefix: settings.remotePathPrefix,
-                        ftpPrefix: settings.ftpPathPrefix,
-                        host: settings.ftpHost,
-                        port: settings.ftpPort,
-                        user: settings.ftpUser,
-                        pass: settings.ftpPassword,
-                        protocol: settings.streamProtocol,
-                    );
-                    ref.read(fileVerificationServiceProvider).verifyFileExists(
-                        url: ftpUrl,
-                        host: settings.ftpHost,
-                        port: settings.ftpPort,
-                        username: settings.ftpUser,
-                        password: settings.ftpPassword,
-                        isSftp: settings.streamProtocol == 'sftp',
-                    ).then((absoluteUrl) async {
-                        if (context.mounted) {
-                           if (absoluteUrl == null) {
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('File NOT FOUND on server.'), backgroundColor: Colors.red));
-                           } else {
-                               final contentId = 'episode_${widget.seriesTmdbId}_s${widget.episode.seasonNumber}_e${widget.episode.episodeNumber}';
-                               VideoLauncher.launch(
-                                 context,
-                                 ref,
-                                 absoluteUrl,
-                                 contentId,
-                               );
-                           }
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                   IconButton(
+                    icon: const Icon(Icons.play_arrow_sharp, color: Colors.white),
+                    onPressed: () async {
+                       // Play Logic Copy
+                        setState(() => _isLoading = true);
+                        if (widget.episode.path != null && widget.episode.path!.isNotEmpty) {
+                          final settings = ref.read(settingsRepositoryProvider).getSettings();
+                          final ftpUrl = PathMapper.mapToFtpUrl(
+                              remotePath: widget.episode.path!,
+                              remotePrefix: settings.remotePathPrefix,
+                              ftpPrefix: settings.ftpPathPrefix,
+                              host: settings.ftpHost,
+                              port: settings.ftpPort,
+                              user: settings.ftpUser,
+                              pass: settings.ftpPassword,
+                              protocol: settings.streamProtocol,
+                          );
+                          ref.read(fileVerificationServiceProvider).verifyFileExists(
+                              url: ftpUrl,
+                              host: settings.ftpHost,
+                              port: settings.ftpPort,
+                              username: settings.ftpUser,
+                              password: settings.ftpPassword,
+                              isSftp: settings.streamProtocol == 'sftp',
+                          ).then((absoluteUrl) async {
+                              if (context.mounted) {
+                                 if (absoluteUrl == null) {
+                                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('File NOT FOUND on server.'), backgroundColor: Colors.red));
+                                 } else {
+                                     final contentId = 'episode_${widget.seriesTmdbId}_s${widget.episode.seasonNumber}_e${widget.episode.episodeNumber}';
+                                     VideoLauncher.launch(
+                                       context,
+                                       ref,
+                                       absoluteUrl,
+                                       contentId,
+                                     );
+                                 }
+                              }
+                              if (mounted) setState(() => _isLoading = false);
+                          }).catchError((e) {
+                               if (mounted) setState(() => _isLoading = false);
+                          });
+                        } else {
+                          if (mounted) setState(() => _isLoading = false);
                         }
-                        if (mounted) setState(() => _isLoading = false);
-                    }).catchError((e) {
-                         if (mounted) setState(() => _isLoading = false);
-                    });
-                  } else {
-                    if (mounted) setState(() => _isLoading = false);
-                  }
-              },
+                    },
+                  ),
+                  if (_isDownloaded)
+                      IconButton(
+                        icon: const Icon(Icons.check_circle, color: Colors.greenAccent),
+                        onPressed: () {
+                           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Episode Downloaded")));
+                        },
+                      )
+                  else
+                      IconButton(
+                        icon: const Icon(Icons.download_sharp, color: Colors.white70),
+                        onPressed: () {
+                           if (widget.episode.path != null) {
+                              final title = "S${widget.episode.seasonNumber.toString().padLeft(2, '0')}E${widget.episode.episodeNumber.toString().padLeft(2, '0')} - ${widget.episode.title ?? 'Episode'}";
+                              final contentId = 'episode_${widget.seriesTmdbId}_s${widget.episode.seasonNumber}_e${widget.episode.episodeNumber}';
+                              ref.read(downloadServiceProvider).downloadFile(widget.episode.path!, title, contentId);
+                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Download Queued")));
+                           }
+                        },
+                      ),
+                ],
             )
-          else
-            IconButton(
-              icon: const Icon(Icons.download_sharp, color: Colors.white70),
-              onPressed: () {
-                 if (widget.episode.path != null) {
-                    final title = "S${widget.episode.seasonNumber.toString().padLeft(2, '0')}E${widget.episode.episodeNumber.toString().padLeft(2, '0')} - ${widget.episode.title ?? 'Episode'}";
-                    final contentId = 'episode_${widget.seriesTmdbId}_s${widget.episode.seasonNumber}_e${widget.episode.episodeNumber}';
-                    ref.read(downloadServiceProvider).downloadFile(widget.episode.path!, title, contentId);
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Download Queued")));
-                 }
-              },
-            ),
+          ] else
+            const SizedBox(), // Nothing if not available (cannot play or download)
         ],
       ),
     );

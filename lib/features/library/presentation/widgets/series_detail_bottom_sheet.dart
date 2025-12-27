@@ -184,18 +184,23 @@ class _SeasonExpansionTile extends ConsumerWidget {
               const Spacer(),
               if (availableCount > 0)
                 TextButton.icon(
-                  onPressed: () {
+                  onPressed: () async {
                      // Download Season Logic
                      int queued = 0;
                      for (final ep in episodes) {
                        if (ep.hasFile && ep.path != null) {
                           // Format: "S01E01 - Title"
                           final title = "S${seasonNumber.toString().padLeft(2, '0')}E${ep.episodeNumber.toString().padLeft(2, '0')} - ${ep.title ?? 'Episode'}";
-                          ref.read(downloadServiceProvider).downloadFile(ep.path!, title);
+                          final contentId = 'episode_${seriesTmdbId}_s${ep.seasonNumber}_e${ep.episodeNumber}';
+                          ref.read(downloadServiceProvider).downloadFile(ep.path!, title, contentId);
                           queued++;
+                          // Small delay to ensure order
+                          await Future.delayed(const Duration(milliseconds: 50));
                        }
                      }
-                     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Queued $queued episodes for download")));
+                     if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Queued $queued episodes for download")));
+                     }
                   },
                   icon: const Icon(Icons.download_for_offline, size: 18, color: Colors.tealAccent),
                   label: const Text("DOWNLOAD SEASON", style: TextStyle(color: Colors.tealAccent, fontSize: 12, fontWeight: FontWeight.bold)),
@@ -307,9 +312,10 @@ class _EpisodeTileState extends ConsumerState<_EpisodeTile> {
                            if (absoluteUrl == null) {
                               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('File NOT FOUND on server.'), backgroundColor: Colors.red));
                            } else {
-                               final contentId = 'series_${widget.seriesTmdbId}_S${widget.episode.seasonNumber}E${widget.episode.episodeNumber}';
+                               final contentId = 'episode_${widget.seriesTmdbId}_s${widget.episode.seasonNumber}_e${widget.episode.episodeNumber}';
                                VideoLauncher.launch(
                                  context,
+                                 ref,
                                  absoluteUrl,
                                  contentId,
                                );
@@ -330,7 +336,8 @@ class _EpisodeTileState extends ConsumerState<_EpisodeTile> {
               onPressed: () {
                  if (widget.episode.path != null) {
                     final title = "S${widget.episode.seasonNumber.toString().padLeft(2, '0')}E${widget.episode.episodeNumber.toString().padLeft(2, '0')} - ${widget.episode.title ?? 'Episode'}";
-                    ref.read(downloadServiceProvider).downloadFile(widget.episode.path!, title);
+                    final contentId = 'episode_${widget.seriesTmdbId}_s${widget.episode.seasonNumber}_e${widget.episode.episodeNumber}';
+                    ref.read(downloadServiceProvider).downloadFile(widget.episode.path!, title, contentId);
                     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Download Queued")));
                  }
               },

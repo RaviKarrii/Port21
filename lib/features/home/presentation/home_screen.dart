@@ -121,6 +121,7 @@ class _HeroSection extends ConsumerWidget {
                                 // Play Action
                                 VideoLauncher.launch(
                                   context,
+                                  ref,
                                   featured.isMovie ? (featured.originalItem as dynamic).path : '',
                                   featured.contentId,
                                 );
@@ -190,6 +191,7 @@ class _ContinueWatchingRail extends ConsumerWidget {
                         onTap: () {
                            VideoLauncher.launch(
                              context,
+                             ref,
                              (item.originalItem as dynamic).path,
                              item.contentId,
                            );

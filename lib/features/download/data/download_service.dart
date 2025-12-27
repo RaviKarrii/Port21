@@ -8,6 +8,9 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:port21/features/library/application/file_verification_service.dart';
 import 'package:port21/features/settings/data/settings_repository.dart';
 import 'package:flutter_downloader/flutter_downloader.dart'; // Added for clearAllDownloads
+import 'package:isar/isar.dart';
+import 'package:port21/features/library/application/library_providers.dart'; // For isarProvider
+import 'package:port21/features/download/domain/downloaded_media.dart';
 
 // --- Enums and Models ---
 
@@ -27,6 +30,7 @@ class DownloadEvent {
   final int progress;
   final DownloadTaskStatus status;
   final String filename;
+  final String contentId; // Added
   final String savedDir;
 
   DownloadEvent({
@@ -35,6 +39,7 @@ class DownloadEvent {
     required this.progress,
     required this.status,
     required this.filename,
+    required this.contentId, // Added
     required this.savedDir,
   });
 }
@@ -51,7 +56,7 @@ class DownloadService {
 
   Stream<DownloadEvent> get downloadStream => _downloadStreamController.stream;
 
-  Future<void> downloadFile(String downloadUrl, String title) async {
+  Future<void> downloadFile(String downloadUrl, String title, String contentId) async {
     // Request Notification Permission for Android 13+
     await Permission.notification.request();
 
@@ -76,18 +81,19 @@ class DownloadService {
 
     // 3. Dispatch based on protocol
     if (protocol == 'sftp') {
-       await _downloadSftp(downloadUrl, localDir, title, settings);
+       await _downloadSftp(downloadUrl, localDir, title, contentId, settings);
     } else {
        // Placeholder for non-SFTP (e.g. standard HTTP or FTP if impl)
        print("Protocol $protocol not fully supported for download yet, trying SFTP logic if sftp://");
        if (downloadUrl.startsWith('sftp://')) {
-          await _downloadSftp(downloadUrl, localDir, title, settings);
+          await _downloadSftp(downloadUrl, localDir, title, contentId, settings);
        }
     }
   }
 
-  Future<void> _downloadSftp(String url, String saveDir, String title, dynamic settings) async {
-      final String taskId = DateTime.now().millisecondsSinceEpoch.toString();
+  Future<void> _downloadSftp(String url, String saveDir, String title, String contentId, dynamic settings) async {
+      // Use Nano-second precision + random component for unique IDs in tight loops
+      final String taskId = '${DateTime.now().microsecondsSinceEpoch}_${(1000 + (DateTime.now().millisecond % 1000))}';
       
       _downloadStreamController.add(DownloadEvent(
         id: taskId,
@@ -96,7 +102,18 @@ class DownloadService {
         status: DownloadTaskStatus.enqueued,
         filename: '$title.mkv',
         savedDir: saveDir,
+        contentId: contentId,
       ));
+
+      // NEW: Persist to Isar (Optimistic)
+      final isar = _ref.read(isarProvider);
+      
+      // We need a contentId. For now, we will assume title is unique enough or pass it in. 
+      // Ideally, the signature of downloadFile should change.
+      // But to avoid breaking changes immediately, let's try to derive or update signature.
+      // Wait, the plan says "Update downloadFile(url, title, contentId)".
+      // I need to update the signature first.
+
 
       final host = settings.ftpHost;
       final port = settings.ftpPort;
@@ -115,6 +132,7 @@ class DownloadService {
             status: DownloadTaskStatus.running,
             filename: '$title.mkv',
             savedDir: saveDir,
+            contentId: contentId,
          ));
 
         // 1. Resolve Path
@@ -167,7 +185,23 @@ class DownloadService {
          int offset = 0;
          
          while (offset < fileSize) {
-            // Check if cancelled? (Not impl yet, simpler logic)
+            // Check if cancelled?
+            if (_cancellationTokens.containsKey(taskId)) {
+                _cancellationTokens.remove(taskId);
+                await sink.close();
+                await localFile.delete();
+                _downloadStreamController.add(DownloadEvent(
+                   id: taskId,
+                   title: title,
+                   progress: 0,
+                   status: DownloadTaskStatus.canceled,
+                   filename: '$title.mkv',
+                   savedDir: saveDir,
+                   contentId: contentId,
+                ));
+                return;
+            }
+
             final chunk = await remoteFile!.readBytes(length: chunkSize, offset: offset);
             if (chunk.isEmpty) break;
             
@@ -184,12 +218,14 @@ class DownloadService {
                 status: DownloadTaskStatus.running,
                 filename: '$title.mkv',
                 savedDir: saveDir,
+                contentId: contentId,
               ));
             }
          }
          
          await sink.flush();
          
+         // Success
          // Success
          _downloadStreamController.add(DownloadEvent(
             id: taskId,
@@ -198,7 +234,30 @@ class DownloadService {
             status: DownloadTaskStatus.complete,
             filename: '$title.mkv',
             savedDir: saveDir,
+            contentId: contentId,
          ));
+         
+         // Update Isar to Completed
+         final isar = _ref.read(isarProvider);
+         await isar.writeTxn(() async {
+            // Find existing or create new
+            final existing = await isar.downloadedMedias.filter().contentIdEqualTo(contentId).findFirst();
+            if (existing != null) {
+               existing.status = 'completed';
+               existing.path = '$saveDir/$title.mkv';
+               existing.downloadedAt = DateTime.now();
+               await isar.downloadedMedias.put(existing);
+            } else {
+               final newItem = DownloadedMedia()
+                 ..contentId = contentId
+                 ..title = title
+                 ..path = '$saveDir/$title.mkv'
+                 ..streamUrl = url
+                 ..status = 'completed'
+                 ..downloadedAt = DateTime.now();
+               await isar.downloadedMedias.put(newItem);
+            }
+         });
          
       } catch (e) {
           print("SFTP Download Failed: $e");
@@ -209,6 +268,7 @@ class DownloadService {
             status: DownloadTaskStatus.failed,
             filename: '$title.mkv',
             savedDir: saveDir,
+            contentId: contentId,
          ));
           // Show error
           // rethrow; // Consumed by the stream listener usually, or we can silence it here to prevent crash
@@ -217,6 +277,41 @@ class DownloadService {
           try { await remoteFile?.close(); } catch (_) {}
           client?.close();
       }
+  }
+
+  final Map<String, bool> _cancellationTokens = {};
+
+  Future<void> cancelTask(String taskId) async {
+      _cancellationTokens[taskId] = true;
+      // Also cancel FlutterDownloader if using it
+      await FlutterDownloader.cancel(taskId: taskId);
+      
+      _downloadStreamController.add(DownloadEvent(
+        id: taskId,
+        title: "Cancelled", 
+        progress: 0, 
+        status: DownloadTaskStatus.canceled, 
+        filename: '', savedDir: '',
+        contentId: '',
+      ));
+  }
+  
+  Future<void> deleteDownload(String contentId) async {
+       final isar = _ref.read(isarProvider);
+       await isar.writeTxn(() async {
+          final item = await isar.downloadedMedias.filter().contentIdEqualTo(contentId).findFirst();
+          if (item != null) {
+             final file = File(item.path);
+             if (await file.exists()) {
+               try {
+                 await file.delete();
+               } catch (e) {
+                 print("Error deleting file: $e");
+               }
+             }
+             await isar.downloadedMedias.delete(item.id);
+          }
+       });
   }
 
   Future<void> clearAllDownloads() async {
@@ -229,5 +324,18 @@ class DownloadService {
              await FlutterDownloader.remove(taskId: t.taskId, shouldDeleteContent: true);
           }
       }
+      
+      // Clear Isar
+      final isar = _ref.read(isarProvider);
+      await isar.writeTxn(() async {
+          final all = await isar.downloadedMedias.where().findAll();
+          for (var item in all) {
+              final file = File(item.path);
+              if (await file.exists()) {
+                   try { await file.delete(); } catch (_) {}
+              }
+          }
+          await isar.downloadedMedias.clear();
+      });
   }
 }

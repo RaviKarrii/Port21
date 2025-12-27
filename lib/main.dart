@@ -15,7 +15,8 @@ import 'features/library/data/local/movie_entity.dart';
 import 'features/library/data/local/series_entity.dart';
 import 'features/library/data/local/series_entity.dart';
 import 'features/settings/data/settings_repository.dart';
-import 'features/player/domain/playback_position.dart'; // Added
+import 'features/player/domain/playback_position.dart';
+import 'features/download/domain/downloaded_media.dart'; // Added
 
 
 
@@ -74,7 +75,7 @@ class _AppStartupWidgetState extends State<AppStartupWidget> {
       final dir = await getApplicationDocumentsDirectory();
       try {
         _isar = await Isar.open(
-          [MovieEntitySchema, SeriesEntitySchema, PlaybackPositionSchema],
+          [MovieEntitySchema, SeriesEntitySchema, PlaybackPositionSchema, DownloadedMediaSchema],
           directory: dir.path,
         );
       } catch (e) {
@@ -83,7 +84,7 @@ class _AppStartupWidgetState extends State<AppStartupWidget> {
         final isarName = 'default'; 
         // Force delete the old DB 
         await Isar.open(
-          [MovieEntitySchema, SeriesEntitySchema, PlaybackPositionSchema],
+          [MovieEntitySchema, SeriesEntitySchema, PlaybackPositionSchema, DownloadedMediaSchema],
           directory: dir.path,
           name: 'temp_cleanup',
         ).then((isar) {
@@ -102,7 +103,7 @@ class _AppStartupWidgetState extends State<AppStartupWidget> {
 
         // Retry open
         _isar = await Isar.open(
-          [MovieEntitySchema, SeriesEntitySchema, PlaybackPositionSchema],
+          [MovieEntitySchema, SeriesEntitySchema, PlaybackPositionSchema, DownloadedMediaSchema],
           directory: dir.path,
         );
       }

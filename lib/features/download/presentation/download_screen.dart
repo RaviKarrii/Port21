@@ -1,10 +1,14 @@
 import 'dart:isolate';
 import 'dart:ui';
+import 'dart:io';
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_downloader/flutter_downloader.dart';
 import 'package:go_router/go_router.dart';
+import 'package:port21/features/library/application/library_providers.dart'; // For isarProvider
+import 'package:isar/isar.dart';
+import 'package:port21/features/download/domain/downloaded_media.dart';
 import '../../player/presentation/player_screen.dart';
 import '../../player/application/video_launcher.dart';
 import '../data/download_service.dart' as svc;
@@ -22,6 +26,7 @@ class UiDownloadTask {
   final int progress;
   final DownloadTaskStatus status;
   final String savedDir;
+  final String contentId; // Added
   
   UiDownloadTask({
     required this.taskId,
@@ -29,6 +34,7 @@ class UiDownloadTask {
     required this.progress,
     required this.status,
     required this.savedDir,
+    this.contentId = '', // Default to empty if unknown
   });
 }
 
@@ -37,9 +43,11 @@ class _DownloadScreenState extends ConsumerState<DownloadScreen> {
   List<UiDownloadTask> uiTasks = [];
   
   // Separate sources
+  // Separate sources
   List<DownloadTask>? flutterTasks;
   final Map<String, svc.DownloadEvent> sftpTasks = {}; 
-  
+  List<DownloadedMedia> isarHistory = []; // Added
+
   final ReceivePort _port = ReceivePort();
   StreamSubscription<svc.DownloadEvent>? _streamSubscription;
 
@@ -51,6 +59,7 @@ class _DownloadScreenState extends ConsumerState<DownloadScreen> {
     
     // Load initial Flutter tasks
     _loadTasks();
+    _loadIsarTasks(); // Added
     
     // Listen to manual SFTP events
     _streamSubscription = ref.read(svc.downloadServiceProvider).downloadStream.listen((event) {
@@ -68,20 +77,38 @@ class _DownloadScreenState extends ConsumerState<DownloadScreen> {
     super.dispose();
   }
 
+  void _loadIsarTasks() async {
+      final isar = ref.read(isarProvider);
+      final history = await isar.downloadedMedias.where().sortByDownloadedAtDesc().findAll();
+      if (mounted) {
+         setState(() {
+            isarHistory = history;
+            _mergeTasks();
+         });
+      }
+  }
+
   void _mergeTasks() {
       // Clear current UI list
-      uiTasks.clear();
+      final merged = <UiDownloadTask>[];
+      final activeContentIds = <String>{}; // Track active content IDs
+
+      // 1. Add SFTP Tasks (Manual) - Active
+      final sftpList = sftpTasks.values.map((e) {
+         if (e.contentId.isNotEmpty) activeContentIds.add(e.contentId);
+         return UiDownloadTask(
+           taskId: e.id,
+           filename: e.filename ?? e.title,
+           progress: e.progress,
+           status: _mapSftpStatus(e.status),
+           savedDir: e.savedDir,
+           contentId: e.contentId,
+        );
+      }).toList();
       
-      // 1. Add SFTP Tasks (Manual)
-      final sftpList = sftpTasks.values.map((e) => UiDownloadTask(
-         taskId: e.id,
-         filename: e.filename ?? e.title,
-         progress: e.progress,
-         status: _mapSftpStatus(e.status),
-         savedDir: e.savedDir,
-      )).toList();
+      merged.addAll(sftpList);
       
-      // 2. Add FlutterDownloader Tasks
+      // 2. Add FlutterDownloader Tasks (Active/History)
       if (flutterTasks != null) {
         final fList = flutterTasks!.map((t) => UiDownloadTask(
            taskId: t.taskId,
@@ -89,15 +116,34 @@ class _DownloadScreenState extends ConsumerState<DownloadScreen> {
            progress: t.progress,
            status: t.status,
            savedDir: t.savedDir,
+           // FlutterDownloader doesn't store contentId easily unless we misuse headers or filename
+           contentId: '', 
         )).toList();
-        
-        uiTasks = [...sftpList, ...fList];
-      } else {
-        uiTasks = sftpList;
+        merged.addAll(fList);
       }
       
-      // Sort by recent? Or status?
-      // uiTasks.sort...
+      // 3. Add Isar History (Persistent Completed)
+      // Only add if NOT in active list (dedupe by contentId if possible)
+      for (var item in isarHistory) {
+          if (!activeContentIds.contains(item.contentId)) {
+               // Only show completed or failed?
+               // If item.status is 'completed', show it.
+               if (item.status == 'completed') {
+                   // Dedupe check: check if file exists?
+                   // Ideally yes, but let's assume Isar is source of truth for UI list.
+                   merged.add(UiDownloadTask(
+                       taskId: item.contentId, // Use contentId as taskID for history items if needed
+                       filename: item.title,
+                       progress: 100,
+                       status: DownloadTaskStatus.complete,
+                       savedDir: File(item.path).parent.path,
+                       contentId: item.contentId,
+                   ));
+               }
+          }
+      }
+      
+      uiTasks = merged;
   }
 
   void _loadTasks() async {
@@ -229,25 +275,64 @@ class _DownloadScreenState extends ConsumerState<DownloadScreen> {
                       ],
                     ),
                   ),
-                  trailing: status == DownloadTaskStatus.complete
-                      ? IconButton(
-                          icon: const Icon(Icons.play_arrow_sharp),
-                          onPressed: () {
-                            final path = '${task.savedDir}/${task.filename}';
-                            VideoLauncher.launch(context, path, null);
-                          },
-                          color: Colors.white,
-                        )
-                      : status == DownloadTaskStatus.failed
-                         ? const Icon(Icons.error_outline_sharp, color: Colors.red)
-                         : Text(
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (status == DownloadTaskStatus.running || status == DownloadTaskStatus.enqueued)
+                         IconButton(
+                           icon: const Icon(Icons.cancel, color: Colors.orangeAccent),
+                           onPressed: () {
+                              ref.read(svc.downloadServiceProvider).cancelTask(task.taskId);
+                           },
+                         ),
+                         
+                      if (status == DownloadTaskStatus.complete) ...[
+                          IconButton(
+                            icon: const Icon(Icons.play_arrow_sharp),
+                            onPressed: () {
+                              final path = '${task.savedDir}/${task.filename}';
+                              // Use contentId if available for smart playback
+                              VideoLauncher.launch(context, ref, path, task.contentId.isNotEmpty ? task.contentId : null);
+                            },
+                            color: Colors.white,
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                            onPressed: () async {
+                               if (task.contentId.isNotEmpty) {
+                                  await ref.read(svc.downloadServiceProvider).deleteDownload(task.contentId);
+                                  // Refresh list
+                                  if (mounted) {
+                                      setState(() {
+                                          sftpTasks.remove(task.taskId); // Remove from active if there
+                                      });
+                                      _loadIsarTasks(); // Reload history
+                                  }
+                               }
+                            },
+                          ),
+                      ] else if (status == DownloadTaskStatus.failed || status == DownloadTaskStatus.canceled) ...[
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                            onPressed: () async {
+                               if (task.contentId.isNotEmpty) {
+                                  await ref.read(svc.downloadServiceProvider).deleteDownload(task.contentId);
+                                  if (mounted) _loadIsarTasks();
+                               }
+                            },
+                          )
+                      ] else if (status != DownloadTaskStatus.running && status != DownloadTaskStatus.enqueued) ...[
+                         Text(
                              '${(progress * 100).toInt()}%',
                              style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.bold, color: Colors.grey),
                            ),
+                      ]
+                    ],
+                  ),
                 ),
               );
             },
-          );
+            );
         },
       ),
     );

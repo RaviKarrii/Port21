@@ -7,7 +7,7 @@ part of 'home_providers.dart';
 // **************************************************************************
 
 String _$recentlyAddedRailsHash() =>
-    r'64fcd8eb28c1a2e9106a4c391fa980e471428f08';
+    r'bcc9bb5972c553bdbc26193c9a86cbea9d64a863';
 
 /// See also [recentlyAddedRails].
 @ProviderFor(recentlyAddedRails)
@@ -24,7 +24,7 @@ final recentlyAddedRailsProvider =
 
 typedef RecentlyAddedRailsRef = AutoDisposeFutureProviderRef<List<HomeContent>>;
 String _$continueWatchingRailHash() =>
-    r'643463b6cb2c9ba37d4959ef83abd473e1ad6508';
+    r'ff50b0352c64e870a2a80690194772a0dd772504';
 
 /// See also [continueWatchingRail].
 @ProviderFor(continueWatchingRail)
@@ -41,7 +41,7 @@ final continueWatchingRailProvider =
 
 typedef ContinueWatchingRailRef
     = AutoDisposeFutureProviderRef<List<HomeContent>>;
-String _$allMoviesRailHash() => r'f8db922b5384ff44661a0b563340cddf2c2fbe53';
+String _$allMoviesRailHash() => r'e9ee93e28793403a3b500f4d7b9ed5cc9381351b';
 
 /// See also [allMoviesRail].
 @ProviderFor(allMoviesRail)

@@ -175,8 +175,9 @@ class _MovieDetailBottomSheetState extends ConsumerState<MovieDetailBottomSheet>
                                if (context.mounted) {
                                   VideoLauncher.launch(
                                     context,
+                                    ref,
                                     absoluteUrl ?? ftpUrl,
-                                    widget.movie.tmdbId.toString(),
+                                    'movie_${widget.movie.tmdbId}',
                                   );
                                   // We keep loading true slightly longer to prevent rapid re-taps during push
                                   await Future.delayed(const Duration(milliseconds: 500));
@@ -210,6 +211,7 @@ class _MovieDetailBottomSheetState extends ConsumerState<MovieDetailBottomSheet>
                      ref.read(downloadServiceProvider).downloadFile(
                        widget.movie.path ?? '', 
                        widget.movie.title,
+                       'movie_${widget.movie.tmdbId}',
                      );
                      Navigator.pop(context);
                      ScaffoldMessenger.of(context).showSnackBar(

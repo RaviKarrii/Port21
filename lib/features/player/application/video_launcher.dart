@@ -4,9 +4,13 @@ import 'package:android_intent_plus/flag.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:port21/features/player/application/sftp_stream_server.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:port21/features/library/application/library_providers.dart'; // For isarProvider
+import 'package:isar/isar.dart';
+import 'package:port21/features/download/domain/downloaded_media.dart';
 
 class VideoLauncher {
-  static Future<void> launch(BuildContext context, String url, String? contentId) async {
+  static Future<void> launch(BuildContext context, WidgetRef ref, String url, String? contentId) async {
     // 1. Show Bottom Sheet to Choose Player
     final choice = await showModalBottomSheet<String>(
       context: context,
@@ -51,12 +55,32 @@ class VideoLauncher {
 
     if (choice == null) return; // User cancelled
 
+    // Smart Local Playback Check
+    String finalUrl = url;
+    if (contentId != null) {
+       try {
+         final isar = ref.read(isarProvider);
+         final localMedia = await isar.downloadedMedias.filter().contentIdEqualTo(contentId).findFirst();
+         
+         if (localMedia != null && localMedia.status == 'completed' && await File(localMedia.path).exists()) {
+            finalUrl = localMedia.path;
+            if (context.mounted) {
+               ScaffoldMessenger.of(context).showSnackBar(
+                 const SnackBar(content: Text("Playing from Downloads (Offline)"), backgroundColor: Colors.green, duration: Duration(seconds: 2)),
+               );
+            }
+         }
+       } catch (e) {
+         print("Error checking local media: $e");
+       }
+    }
+
     if (choice == 'internal') {
       if (context.mounted) {
-         context.push('/player', extra: {'url': url, 'contentId': contentId});
+         context.push('/player', extra: {'url': finalUrl, 'contentId': contentId});
       }
     } else if (choice == 'external') {
-      _launchExternal(context, url);
+      _launchExternal(context, finalUrl);
     }
   }
 

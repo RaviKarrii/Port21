@@ -47,7 +47,7 @@ Future<List<HomeContent>> recentlyAddedRails(RecentlyAddedRailsRef ref) async {
       posterUrl: m.images.firstWhere((i) => i.coverType == 'poster', orElse: () => MovieImage(coverType: 'none', url: '')).remoteUrl ?? m.images.firstOrNull?.url,
       // Use remoteUrl if available, fall back to whatever we have. 
       // Note: LibraryRepo usually populates this with TMDB url now.
-      contentId: m.tmdbId.toString(),
+      contentId: 'movie_${m.tmdbId}',
       isMovie: true,
       originalItem: m,
       overview: m.overview,
@@ -94,7 +94,7 @@ Future<List<HomeContent>> continueWatchingRail(ContinueWatchingRailRef ref) asyn
     // Find match
     // Check Movie
     try {
-      final m = movies.firstWhere((m) => m.tmdbId.toString() == p.contentId);
+      final m = movies.firstWhere((m) => 'movie_${m.tmdbId}' == p.contentId);
       continuing.add(HomeContent(
         title: m.title,
         posterUrl: m.images.firstWhere((i) => i.coverType == 'poster', orElse: () => MovieImage(coverType: 'none', url: '')).remoteUrl,
@@ -122,7 +122,7 @@ Future<List<HomeContent>> allMoviesRail(AllMoviesRailRef ref) async {
   return movies.map((m) => HomeContent(
       title: m.title,
       posterUrl: m.images.firstWhere((i) => i.coverType == 'poster', orElse: () => MovieImage(coverType: 'none', url: '')).remoteUrl ?? m.images.firstOrNull?.url,
-      contentId: m.tmdbId.toString(),
+      contentId: 'movie_${m.tmdbId}',
       isMovie: true,
       originalItem: m,
       overview: m.overview,

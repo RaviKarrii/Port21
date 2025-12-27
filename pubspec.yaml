@@ -1,0 +1,60 @@
+name: port21
+description: A high-performance media client.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.10.3 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod:
+
+  dio:
+  isar:
+  isar_flutter_libs:
+  go_router: ^12.0.0
+  http: ^1.2.1
+  riverpod_annotation: ^2.3.5
+  google_fonts:
+  path_provider:
+  permission_handler:
+  shared_preferences:
+  freezed_annotation:
+  json_annotation: ^4.9.0
+  cached_network_image: ^3.4.1
+  flutter_downloader: ^1.12.0
+  mobile_scanner: ^5.1.0
+  file_picker: ^8.0.0
+  dartssh2: ^2.6.1
+  ftpconnect: ^2.0.10
+  media_kit: ^1.1.10
+  media_kit_video: ^1.2.4
+  media_kit_libs_android_video: ^1.2.0
+  network_info_plus: ^5.0.1
+  tmdb_api: ^2.1.1
+  flutter_rating_bar: ^4.0.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints:
+  build_runner:
+  riverpod_generator:
+  isar_generator:
+  freezed:
+  json_serializable: ^6.8.0
+  flutter_launcher_icons: ^0.13.1
+
+flutter_launcher_icons:
+  android: "ic_launcher"
+  ios: true
+  image_path: "assets/icon/app_icon.png"
+  min_sdk_android: 21
+
+dependency_overrides:
+  sqflite_android: 2.4.0
+
+flutter:
+  uses-material-design: true

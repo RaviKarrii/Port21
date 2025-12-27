@@ -57,15 +57,24 @@ class SonarrService {
         },
       );
       final List<dynamic> filesData = filesResponse.data;
-      final filesMap = {for (var f in filesData) f['id'] as int: f['path'] as String};
+      // Map fileId -> {path, size}
+      final filesMap = {
+        for (var f in filesData) 
+          f['id'] as int : {
+             'path': f['path'] as String,
+             'size': f['size'] as int? ?? 0
+          }
+      };
 
       return data.map((json) {
-         // Inject path if file exists
+         // Inject path and size if file exists
          if (json['episodeFileId'] != null && json['episodeFileId'] != 0) {
             final fileId = json['episodeFileId'] as int;
             if (filesMap.containsKey(fileId)) {
-               json['path'] = filesMap[fileId];
-               print('SonarrService: Injected path ${json['path']}');
+               final fileInfo = filesMap[fileId]!;
+               json['path'] = fileInfo['path'];
+               json['sizeOnDisk'] = fileInfo['size'];
+               // print('SonarrService: Injected path ${json['path']} size ${json['sizeOnDisk']}');
             }
          }
          return Episode.fromJson(json);

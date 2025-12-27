@@ -28,6 +28,7 @@ mixin _$Episode {
   String? get title => throw _privateConstructorUsedError;
   String? get overview => throw _privateConstructorUsedError;
   String? get path => throw _privateConstructorUsedError;
+  int get sizeOnDisk => throw _privateConstructorUsedError; // Added
   bool get hasFile => throw _privateConstructorUsedError;
   DateTime? get airDateUtc => throw _privateConstructorUsedError;
 
@@ -50,6 +51,7 @@ abstract class $EpisodeCopyWith<$Res> {
       String? title,
       String? overview,
       String? path,
+      int sizeOnDisk,
       bool hasFile,
       DateTime? airDateUtc});
 }
@@ -75,6 +77,7 @@ class _$EpisodeCopyWithImpl<$Res, $Val extends Episode>
     Object? title = freezed,
     Object? overview = freezed,
     Object? path = freezed,
+    Object? sizeOnDisk = null,
     Object? hasFile = null,
     Object? airDateUtc = freezed,
   }) {
@@ -111,6 +114,10 @@ class _$EpisodeCopyWithImpl<$Res, $Val extends Episode>
           ? _value.path
           : path // ignore: cast_nullable_to_non_nullable
               as String?,
+      sizeOnDisk: null == sizeOnDisk
+          ? _value.sizeOnDisk
+          : sizeOnDisk // ignore: cast_nullable_to_non_nullable
+              as int,
       hasFile: null == hasFile
           ? _value.hasFile
           : hasFile // ignore: cast_nullable_to_non_nullable
@@ -139,6 +146,7 @@ abstract class _$$EpisodeImplCopyWith<$Res> implements $EpisodeCopyWith<$Res> {
       String? title,
       String? overview,
       String? path,
+      int sizeOnDisk,
       bool hasFile,
       DateTime? airDateUtc});
 }
@@ -162,6 +170,7 @@ class __$$EpisodeImplCopyWithImpl<$Res>
     Object? title = freezed,
     Object? overview = freezed,
     Object? path = freezed,
+    Object? sizeOnDisk = null,
     Object? hasFile = null,
     Object? airDateUtc = freezed,
   }) {
@@ -198,6 +207,10 @@ class __$$EpisodeImplCopyWithImpl<$Res>
           ? _value.path
           : path // ignore: cast_nullable_to_non_nullable
               as String?,
+      sizeOnDisk: null == sizeOnDisk
+          ? _value.sizeOnDisk
+          : sizeOnDisk // ignore: cast_nullable_to_non_nullable
+              as int,
       hasFile: null == hasFile
           ? _value.hasFile
           : hasFile // ignore: cast_nullable_to_non_nullable
@@ -222,6 +235,7 @@ class _$EpisodeImpl implements _Episode {
       this.title,
       this.overview,
       this.path,
+      this.sizeOnDisk = 0,
       this.hasFile = false,
       this.airDateUtc});
 
@@ -246,13 +260,17 @@ class _$EpisodeImpl implements _Episode {
   final String? path;
   @override
   @JsonKey()
+  final int sizeOnDisk;
+// Added
+  @override
+  @JsonKey()
   final bool hasFile;
   @override
   final DateTime? airDateUtc;
 
   @override
   String toString() {
-    return 'Episode(id: $id, seriesId: $seriesId, episodeFileId: $episodeFileId, seasonNumber: $seasonNumber, episodeNumber: $episodeNumber, title: $title, overview: $overview, path: $path, hasFile: $hasFile, airDateUtc: $airDateUtc)';
+    return 'Episode(id: $id, seriesId: $seriesId, episodeFileId: $episodeFileId, seasonNumber: $seasonNumber, episodeNumber: $episodeNumber, title: $title, overview: $overview, path: $path, sizeOnDisk: $sizeOnDisk, hasFile: $hasFile, airDateUtc: $airDateUtc)';
   }
 
   @override
@@ -273,6 +291,8 @@ class _$EpisodeImpl implements _Episode {
             (identical(other.overview, overview) ||
                 other.overview == overview) &&
             (identical(other.path, path) || other.path == path) &&
+            (identical(other.sizeOnDisk, sizeOnDisk) ||
+                other.sizeOnDisk == sizeOnDisk) &&
             (identical(other.hasFile, hasFile) || other.hasFile == hasFile) &&
             (identical(other.airDateUtc, airDateUtc) ||
                 other.airDateUtc == airDateUtc));
@@ -280,8 +300,19 @@ class _$EpisodeImpl implements _Episode {
 
   @JsonKey(ignore: true)
   @override
-  int get hashCode => Object.hash(runtimeType, id, seriesId, episodeFileId,
-      seasonNumber, episodeNumber, title, overview, path, hasFile, airDateUtc);
+  int get hashCode => Object.hash(
+      runtimeType,
+      id,
+      seriesId,
+      episodeFileId,
+      seasonNumber,
+      episodeNumber,
+      title,
+      overview,
+      path,
+      sizeOnDisk,
+      hasFile,
+      airDateUtc);
 
   @JsonKey(ignore: true)
   @override
@@ -307,6 +338,7 @@ abstract class _Episode implements Episode {
       final String? title,
       final String? overview,
       final String? path,
+      final int sizeOnDisk,
       final bool hasFile,
       final DateTime? airDateUtc}) = _$EpisodeImpl;
 
@@ -329,6 +361,8 @@ abstract class _Episode implements Episode {
   @override
   String? get path;
   @override
+  int get sizeOnDisk;
+  @override // Added
   bool get hasFile;
   @override
   DateTime? get airDateUtc;

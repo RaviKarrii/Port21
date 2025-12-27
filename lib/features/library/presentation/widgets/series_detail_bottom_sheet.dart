@@ -286,18 +286,30 @@ class _EpisodeTileState extends ConsumerState<_EpisodeTile> {
                      ),
                    ),
                  const SizedBox(height: 8),
-                 Container(
-                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                   decoration: BoxDecoration(
-                     color: isAvailable ? Colors.green.withOpacity(0.1) : Colors.red.withOpacity(0.1),
-                     border: Border.all(color: isAvailable ? Colors.green.withOpacity(0.5) : Colors.red.withOpacity(0.5), width: 0.5),
-                   ),
-                   child: Text(
-                     isAvailable ? "AVAILABLE" : "MISSING", 
-                     style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: isAvailable ? Colors.greenAccent : Colors.redAccent),
-                   ),
-                 ),
-              ],
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                       Container(
+                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                         decoration: BoxDecoration(
+                           color: isAvailable ? Colors.green.withOpacity(0.1) : Colors.red.withOpacity(0.1),
+                           border: Border.all(color: isAvailable ? Colors.green.withOpacity(0.5) : Colors.red.withOpacity(0.5), width: 0.5),
+                         ),
+                         child: Text(
+                           isAvailable ? "AVAILABLE" : "MISSING", 
+                           style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: isAvailable ? Colors.greenAccent : Colors.redAccent),
+                         ),
+                       ),
+                       if (widget.episode.sizeOnDisk > 0) ...[
+                          const SizedBox(width: 8),
+                          Text(
+                             _formatSize(widget.episode.sizeOnDisk),
+                             style: const TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.bold),
+                          ),
+                       ]
+                    ],
+                  ),
+               ],
             ),
           ),
           if (isAvailable) ...[
@@ -379,5 +391,16 @@ class _EpisodeTileState extends ConsumerState<_EpisodeTile> {
         ],
       ),
     );
+  }
+  String _formatSize(int bytes) {
+    if (bytes <= 0) return "";
+    const suffixes = ["B", "KB", "MB", "GB", "TB"];
+    var i = 0;
+    double size = bytes.toDouble();
+    while (size >= 1024 && i < suffixes.length - 1) {
+      size /= 1024;
+      i++;
+    }
+    return '${size.toStringAsFixed(1)} ${suffixes[i]}';
   }
 }

@@ -14,6 +14,7 @@ class Episode with _$Episode {
     String? title,
     String? overview,
     String? path,
+    @Default(0) int sizeOnDisk, // Added
     @Default(false) bool hasFile,
     DateTime? airDateUtc,
   }) = _Episode;

@@ -51,6 +51,8 @@ class _DownloadScreenState extends ConsumerState<DownloadScreen> {
   final ReceivePort _port = ReceivePort();
   StreamSubscription<svc.DownloadEvent>? _streamSubscription;
 
+  int _totalBytesUsed = 0;
+
   @override
   void initState() {
     super.initState();
@@ -72,11 +74,23 @@ class _DownloadScreenState extends ConsumerState<DownloadScreen> {
     });
   }
 
-  @override
-  void dispose() {
-    _unbindBackgroundIsolate();
-    _streamSubscription?.cancel();
-    super.dispose();
+  // ... (dispose and other methods unchanged)
+
+  Future<void> _calculateUsage() async {
+      int total = 0;
+      for (var item in isarHistory) {
+         if (item.status == 'completed') {
+            final f = File(item.path);
+            if (await f.exists()) {
+               total += await f.length();
+            }
+         }
+      }
+      if (mounted) {
+         setState(() {
+            _totalBytesUsed = total;
+         });
+      }
   }
 
   void _loadIsarTasks() async {
@@ -87,6 +101,7 @@ class _DownloadScreenState extends ConsumerState<DownloadScreen> {
             isarHistory = history;
             _mergeTasks();
          });
+         _calculateUsage(); // Calculate after loading
       }
   }
 
@@ -186,11 +201,32 @@ class _DownloadScreenState extends ConsumerState<DownloadScreen> {
     send?.send([id, status, progress]);
   }
 
+  String _formatBytes(int bytes) {
+    if (bytes <= 0) return "0 B";
+    const suffixes = ["B", "KB", "MB", "GB", "TB"];
+    var i = 0;
+    double size = bytes.toDouble();
+    while (size >= 1024 && i < suffixes.length - 1) {
+      size /= 1024;
+      i++;
+    }
+    return '${size.toStringAsFixed(1)} ${suffixes[i]}';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Downloads"),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text("Downloads"),
+            Text(
+               "Used: ${_formatBytes(_totalBytesUsed)}", 
+               style: const TextStyle(fontSize: 12, color: Colors.grey)
+            ),
+          ],
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.delete_forever_sharp),

@@ -40,7 +40,6 @@ class _MovieDetailBottomSheetState extends ConsumerState<MovieDetailBottomSheet>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final sizeInGb = (widget.movie.sizeOnDisk / (1024 * 1024 * 1024)).toStringAsFixed(2);
     
     return Container(
       padding: const EdgeInsets.all(16.0),
@@ -74,7 +73,7 @@ class _MovieDetailBottomSheetState extends ConsumerState<MovieDetailBottomSheet>
               _buildFlatChip(context, '${widget.movie.runtime} MIN'),
               const SizedBox(width: 8),
               if (widget.movie.hasFile)
-                 _buildFlatChip(context, '${sizeInGb} GB', icon: Icons.sd_storage)
+                 _buildFlatChip(context, _formatSize(widget.movie.sizeOnDisk), icon: Icons.sd_storage)
               else
                  _buildFlatChip(context, 'MISSING', color: Colors.redAccent.withOpacity(0.2), textColor: Colors.redAccent),
             ],
@@ -253,5 +252,17 @@ class _MovieDetailBottomSheetState extends ConsumerState<MovieDetailBottomSheet>
         ],
       ),
     );
+  }
+
+  String _formatSize(int bytes) {
+    if (bytes <= 0) return "0 B";
+    const suffixes = ["B", "KB", "MB", "GB", "TB"];
+    var i = 0;
+    double size = bytes.toDouble();
+    while (size >= 1024 && i < suffixes.length - 1) {
+      size /= 1024;
+      i++;
+    }
+    return '${size.toStringAsFixed(1)} ${suffixes[i]}';
   }
 }

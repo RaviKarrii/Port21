@@ -16,6 +16,7 @@ _$EpisodeImpl _$$EpisodeImplFromJson(Map<String, dynamic> json) =>
       title: json['title'] as String?,
       overview: json['overview'] as String?,
       path: json['path'] as String?,
+      sizeOnDisk: (json['sizeOnDisk'] as num?)?.toInt() ?? 0,
       hasFile: json['hasFile'] as bool? ?? false,
       airDateUtc: json['airDateUtc'] == null
           ? null
@@ -32,6 +33,7 @@ Map<String, dynamic> _$$EpisodeImplToJson(_$EpisodeImpl instance) =>
       'title': instance.title,
       'overview': instance.overview,
       'path': instance.path,
+      'sizeOnDisk': instance.sizeOnDisk,
       'hasFile': instance.hasFile,
       'airDateUtc': instance.airDateUtc?.toIso8601String(),
     };

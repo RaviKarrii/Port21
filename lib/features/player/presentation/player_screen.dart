@@ -25,6 +25,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   bool _showControls = true;
   bool _isInit = false;
   bool _canPopNow = false;
+  BoxFit _fit = BoxFit.contain; // Added: default fit
   
   // Stream Server
   SftpStreamServer? _sftpServer;
@@ -333,8 +334,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           children: [
              // ... rest of body ...
           // Video Layer
-          Center(
-            child: Video(controller: _controller),
+          SizedBox.expand(
+            child: Video(controller: _controller, fit: _fit),
           ),
           
           // Gesture Layer
@@ -360,6 +361,29 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                           onPressed: _onExit,
                         ),
                         const Spacer(),
+                        // Fit Toggle Button
+                        IconButton(
+                           icon: Icon(
+                              _fit == BoxFit.cover ? Icons.crop_free : 
+                              _fit == BoxFit.fill ? Icons.aspect_ratio : Icons.fit_screen, 
+                              color: Colors.white
+                           ),
+                           tooltip: "Change Aspect Ratio",
+                           onPressed: () {
+                              setState(() {
+                                 if (_fit == BoxFit.contain) {
+                                    _fit = BoxFit.cover; // Zoom/Crop
+                                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Zoom to Fill"), duration: Duration(milliseconds: 500)));
+                                 } else if (_fit == BoxFit.cover) {
+                                    _fit = BoxFit.fill; // Stretch
+                                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Stretch"), duration: Duration(milliseconds: 500)));
+                                 } else {
+                                    _fit = BoxFit.contain; // Normal
+                                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Original Fit"), duration: Duration(milliseconds: 500)));
+                                 }
+                              });
+                           },
+                        ),
                         // Cast Button
                         IconButton(
                            icon: const Icon(Icons.cast, color: Colors.white),

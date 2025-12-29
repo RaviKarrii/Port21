@@ -3,27 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:port21/features/library/domain/movie.dart';
 import 'package:port21/features/library/application/file_verification_service.dart';
-import 'package:port21/features/settings/data/settings_repository.dart'; // For API key
+import 'package:port21/features/settings/data/settings_repository.dart'; 
 import 'package:port21/features/download/data/download_service.dart';
 import 'package:port21/features/player/presentation/player_screen.dart';
 import 'package:port21/features/player/application/video_launcher.dart';
 import 'package:port21/core/utils/path_mapper.dart';
-
-// Helper to construct image URL
-// Radarr images are /MediaCover/10/poster.jpg?apikey=...
-// We need to resolve the full URL.
-String? getPosterUrl(Movie movie, String baseUrl, String apiKey) {
-  final poster = movie.images.firstWhere(
-    (img) => img.coverType == 'Poster',
-    orElse: () => const MovieImage(coverType: '', url: ''),
-  );
-  if (poster.url.isNotEmpty) {
-    // If remoteUrl is present and valid, use it? Usually 'url' is relative path like /MediaCover/...
-    // So we append it to base URL.
-    return '$baseUrl${poster.url}?apikey=$apiKey';
-  }
-  return null;
-}
+import 'package:port21/features/library/application/library_providers.dart';
+import 'package:port21/features/library/data/library_repository.dart';
 
 class MovieDetailBottomSheet extends ConsumerStatefulWidget {
   final Movie movie;
@@ -36,11 +22,96 @@ class MovieDetailBottomSheet extends ConsumerStatefulWidget {
 
 class _MovieDetailBottomSheetState extends ConsumerState<MovieDetailBottomSheet> {
   bool _isLoading = false;
+  Movie? _existingMovie; // Local match from Library
+  bool _isChecking = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkLibraryStatus();
+  }
+
+  Future<void> _checkLibraryStatus() async {
+     // If widget.movie has ID > 0 (Sonarr ID), it is likely from local library already.
+     // If ID < 0 (TMDB ID), we need to check if we have it.
+     
+     if (widget.movie.id > 0) {
+        // Already local
+        if (mounted) setState(() {
+           _existingMovie = widget.movie;
+           _isChecking = false;
+        });
+        return;
+     }
+
+     // Check by TMDB ID
+     try {
+        final movies = await ref.read(libraryRepositoryProvider).getMovies(forceRefresh: false);
+        final match = movies.where((m) => m.tmdbId == widget.movie.tmdbId).firstOrNull;
+        if (mounted) setState(() {
+           _existingMovie = match;
+           _isChecking = false;
+        });
+     } catch (e) {
+        if (mounted) setState(() => _isChecking = false);
+     }
+  }
+
+  Future<void> _requestMovie() async {
+     setState(() => _isLoading = true);
+     try {
+       final radarr = ref.read(radarrServiceProvider);
+       if (radarr == null) throw Exception("Radarr not configured");
+
+       // Get Root Folders (Needed for path)
+       final rootFolders = await radarr.getRootFolders();
+       if (rootFolders.isEmpty) throw Exception("No Root Folders configured in Radarr");
+       final rootPath = rootFolders.first['path'];
+
+       // Get Quality Profile (Default to 1 or first available?)
+       // Just use 1 (Any) as safe default for now or fetch.
+       // Let's rely on user configuration or fallback.
+       // Ideally we should ask user, but "One Click Request" is better.
+       // We can assume 'SD' or 'HD' via settings? 
+       // Hardcode 1 for now or 4 (Any). 1 fits most defaults.
+       
+       final success = await radarr.addMovie({
+          'title': widget.movie.title,
+          'tmdbId': widget.movie.tmdbId,
+          'year': widget.movie.year > 0 ? widget.movie.year : 2023, // Fallback if year missing
+          'rootFolderPath': rootPath,
+          'qualityProfileId': 1, // Default
+          'monitored': true,
+          'addOptions': {'searchForMovie': true},
+          // images? Optional
+       });
+
+       if (success) {
+          if (mounted) {
+             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Request Sent! Searching..."), backgroundColor: Colors.green));
+             Navigator.pop(context); // Close sheet
+          }
+       } else {
+          throw Exception("Radarr returned failure");
+       }
+
+     } catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Request Failed: $e"), backgroundColor: Colors.red));
+     } finally {
+        if (mounted) setState(() => _isLoading = false);
+     }
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+    final targetMovie = _existingMovie ?? widget.movie;
+    final isAvailable = targetMovie.hasFile; 
+    final isMonitored = _existingMovie != null && !isAvailable; // In library but no file
+    final isNew = _existingMovie == null;
+
+    final backdropUrl = targetMovie.images.firstWhere((i) => i.coverType == 'backdrop', orElse: () => const MovieImage(coverType: '', url: '')).remoteUrl;
+
     return Container(
       padding: const EdgeInsets.all(16.0),
       decoration: BoxDecoration(
@@ -51,7 +122,6 @@ class _MovieDetailBottomSheetState extends ConsumerState<MovieDetailBottomSheet>
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Handle - replaced with industrial bar
           Center(
             child: Container(
               height: 2,
@@ -70,12 +140,18 @@ class _MovieDetailBottomSheetState extends ConsumerState<MovieDetailBottomSheet>
           // Metadata Row: Flat Chips
           Row(
             children: [
-              _buildFlatChip(context, '${widget.movie.runtime} MIN'),
-              const SizedBox(width: 8),
-              if (widget.movie.hasFile)
-                 _buildFlatChip(context, _formatSize(widget.movie.sizeOnDisk), icon: Icons.sd_storage)
+              if (widget.movie.year > 0) ...[
+                 _buildFlatChip(context, '${widget.movie.year}'),
+                 const SizedBox(width: 8),
+              ],
+              // _buildFlatChip(context, '${widget.movie.runtime} MIN'), // Runtime might not be available in simplified model
+             
+              if (isAvailable)
+                 _buildFlatChip(context, 'AVAILABLE', color: Colors.greenAccent.withOpacity(0.2), textColor: Colors.greenAccent)
+              else if (isMonitored)
+                 _buildFlatChip(context, 'REQUESTED', color: Colors.orangeAccent.withOpacity(0.2), textColor: Colors.orangeAccent)
               else
-                 _buildFlatChip(context, 'MISSING', color: Colors.redAccent.withOpacity(0.2), textColor: Colors.redAccent),
+                 _buildFlatChip(context, 'NEW', color: Colors.blueAccent.withOpacity(0.2), textColor: Colors.blueAccent),
             ],
           ),
           const SizedBox(height: 24),
@@ -93,139 +169,129 @@ class _MovieDetailBottomSheetState extends ConsumerState<MovieDetailBottomSheet>
           ),
           const SizedBox(height: 32),
           
-          // Actions: Big Flat Buttons
-          Row(
+          // Actions
+          if (_isChecking)
+             const Center(child: CircularProgressIndicator())
+          else
+             Row(
             children: [
               Expanded(
                 child: SizedBox(
                    height: 56,
                    child: FilledButton.icon(
-                      onPressed: (widget.movie.hasFile && !_isLoading)
-                        ? () async {
-                            setState(() => _isLoading = true);
-                            
-                            // Check for path
-                            if (widget.movie.path != null && widget.movie.path!.isNotEmpty) {
-                               // Get Settings
-                               final settings = ref.read(settingsRepositoryProvider).getSettings();
-                               
-                               // Map Path to FTP URL
-                               final ftpUrl = PathMapper.mapToFtpUrl(
-                                  remotePath: widget.movie.path!,
-                                  remotePrefix: settings.remotePathPrefix,
-                                  ftpPrefix: settings.ftpPathPrefix,
-                                  host: settings.ftpHost,
-                                  port: settings.ftpPort,
-                                  user: settings.ftpUser,
-                                  pass: settings.ftpPassword,
-                                  protocol: settings.streamProtocol,
-                               );
-                               
-                                // Prepare Settings for Verification
-                                final isSftpStrict = settings.streamProtocol == 'sftp';
-                                
-                                String? absoluteUrl; 
-
-                                try {
-                                  // Verify and Get Corrected URL (Silent)
-                                  absoluteUrl = await ref.read(fileVerificationServiceProvider).verifyFileExists(
-                                    url: ftpUrl,
-                                    host: settings.ftpHost,
-                                    port: settings.ftpPort,
-                                    username: settings.ftpUser,
-                                    password: settings.ftpPassword,
-                                    isSftp: isSftpStrict,
-                                  );
-
-                                  if (absoluteUrl == null) {
-                                     print('UI: absoluteUrl is null. Showing Not Found SnackBar.');
-                                     if (context.mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('File NOT FOUND on server.'),
-                                          backgroundColor: Colors.red,
-                                          duration: Duration(seconds: 3),
-                                        ),
-                                      );
-                                     }
-                                     if (mounted) setState(() => _isLoading = false);
-                                     return;
-                                  }
-                                } catch (e) {
-                                   print('UI: Exception caught: $e');
-                                   if (context.mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                          content: Text('Verification Error: $e'),
-                                          backgroundColor: Colors.orange,
-                                        ),
-                                      );
-                                   }
-                                   if (mounted) setState(() => _isLoading = false);
-                                   return; 
-                                }
-
-                                if (!context.mounted) {
-                                  print('UI: Context not mounted after verify.');
-                                  return;
-                                }
-                                
-                               // Navigation to player (GoRouter)
-                               if (context.mounted) {
-                                  VideoLauncher.launch(
-                                    context,
-                                    ref,
-                                    absoluteUrl ?? ftpUrl,
-                                    'movie_${widget.movie.tmdbId}',
-                                  );
-                                  // We keep loading true slightly longer to prevent rapid re-taps during push
-                                  await Future.delayed(const Duration(milliseconds: 500));
-                                  if (mounted) setState(() => _isLoading = false);
-                               }
-                            } else {
-                               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("No file path available")));
-                               if (mounted) setState(() => _isLoading = false);
-                            }
-                          } 
-                        : null,
+                      onPressed: _isLoading ? null : () {
+                          if (isAvailable) {
+                             _playLocal(targetMovie);
+                          } else if (isNew) {
+                             _requestMovie();
+                          } else {
+                             // Monitored - maybe force search?
+                             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Already requested. Waiting for download.")));
+                          }
+                      },
                       icon: _isLoading 
                         ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black)) 
-                        : const Icon(Icons.play_arrow_sharp),
-                      label: Text(_isLoading ? "VERIFYING..." : "PLAY MOVIE"),
+                        : Icon(isAvailable ? Icons.play_arrow_sharp : (isNew ? Icons.add_circle_outline : Icons.timelapse)),
+                      label: Text(
+                        _isLoading 
+                           ? "PROCESSING..." 
+                           : (isAvailable ? "PLAY MOVIE" : (isNew ? "REQUEST" : "MONITORED"))
+                      ),
+                      style: FilledButton.styleFrom(
+                         backgroundColor: isAvailable ? Colors.white : (isNew ? Colors.blueAccent : Colors.grey[800]),
+                         foregroundColor: isAvailable ? Colors.black : Colors.white,
+                      ),
                    ),
                 ),
               ),
-              const SizedBox(width: 16),
-              SizedBox(
-                height: 56,
-                width: 56,
-                child: OutlinedButton(
-                  style: OutlinedButton.styleFrom(
-                    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
-                    side: const BorderSide(color: Color(0xFFEEEEEE), width: 1.0),
-                    foregroundColor: const Color(0xFFEEEEEE),
-                    padding: EdgeInsets.zero,
+              if (isAvailable) ...[
+                 const SizedBox(width: 16),
+                 SizedBox(
+                  height: 56,
+                  width: 56,
+                  child: OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+                      side: const BorderSide(color: Color(0xFFEEEEEE), width: 1.0),
+                      foregroundColor: const Color(0xFFEEEEEE),
+                      padding: EdgeInsets.zero,
+                    ),
+                    onPressed: () { 
+                       if (targetMovie.path != null && targetMovie.path!.isNotEmpty) {
+                           ref.read(downloadServiceProvider).downloadFile(
+                              targetMovie.path!, 
+                              targetMovie.title, 
+                              'movie_${targetMovie.tmdbId}'
+                           );
+                           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Download Queued")));
+                       } else {
+                           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("No file path available for download")));
+                       }
+                    },
+                    child: const Icon(Icons.download_sharp),
                   ),
-                  onPressed: () { 
-                     ref.read(downloadServiceProvider).downloadFile(
-                       widget.movie.path ?? '', 
-                       widget.movie.title,
-                       'movie_${widget.movie.tmdbId}',
-                     );
-                     Navigator.pop(context);
-                     ScaffoldMessenger.of(context).showSnackBar(
-                       const SnackBar(content: Text('Initializing Download Protocol...')),
-                     );
-                  },
-                  child: const Icon(Icons.download_sharp),
                 ),
-              ),
+              ]
             ],
           ),
           const SizedBox(height: 16),
         ],
       ),
     );
+  }
+
+  Future<void> _playLocal(Movie movie) async {
+        setState(() => _isLoading = true);
+        
+        if (movie.path != null && movie.path!.isNotEmpty) {
+           final settings = ref.read(settingsRepositoryProvider).getSettings();
+           final ftpUrl = PathMapper.mapToFtpUrl(
+              remotePath: movie.path!,
+              remotePrefix: settings.remotePathPrefix,
+              ftpPrefix: settings.ftpPathPrefix,
+              host: settings.ftpHost,
+              port: settings.ftpPort,
+              user: settings.ftpUser,
+              pass: settings.ftpPassword,
+              protocol: settings.streamProtocol,
+           );
+           
+           try {
+              final absoluteUrl = await ref.read(fileVerificationServiceProvider).verifyFileExists(
+                url: ftpUrl,
+                host: settings.ftpHost,
+                port: settings.ftpPort,
+                username: settings.ftpUser,
+                password: settings.ftpPassword,
+                isSftp: settings.streamProtocol == 'sftp',
+              );
+
+              if (absoluteUrl == null) {
+                 if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('File NOT FOUND on server.'), backgroundColor: Colors.red));
+                    setState(() => _isLoading = false);
+                 }
+                 return;
+              }
+              
+              if (mounted) {
+                  VideoLauncher.launch(context, ref, absoluteUrl, 'movie_${movie.tmdbId}');
+                  await Future.delayed(const Duration(milliseconds: 500)); // Debounce
+                  if (mounted) setState(() => _isLoading = false);
+              }
+
+           } catch (e) {
+               if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Verification Error: $e'), backgroundColor: Colors.orange));
+                  setState(() => _isLoading = false);
+               }
+           }
+        } else {
+             if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("No file path available")));
+                setState(() => _isLoading = false);
+             }
+        }
   }
 
   Widget _buildFlatChip(BuildContext context, String label, {IconData? icon, Color? color, Color? textColor}) {
@@ -252,17 +318,5 @@ class _MovieDetailBottomSheetState extends ConsumerState<MovieDetailBottomSheet>
         ],
       ),
     );
-  }
-
-  String _formatSize(int bytes) {
-    if (bytes <= 0) return "0 B";
-    const suffixes = ["B", "KB", "MB", "GB", "TB"];
-    var i = 0;
-    double size = bytes.toDouble();
-    while (size >= 1024 && i < suffixes.length - 1) {
-      size /= 1024;
-      i++;
-    }
-    return '${size.toStringAsFixed(1)} ${suffixes[i]}';
   }
 }

@@ -22,11 +22,11 @@ subprojects {
         if (android != null) {
             try {
                 val setCompileSdkVersion = android.javaClass.getMethod("setCompileSdkVersion", Int::class.javaPrimitiveType)
-                setCompileSdkVersion.invoke(android, 35)
+                setCompileSdkVersion.invoke(android, 36)
             } catch (e: Exception) {
                  try {
                     val setCompileSdkVersion = android.javaClass.getMethod("setCompileSdkVersion", Int::class.java)
-                    setCompileSdkVersion.invoke(android, 35)
+                    setCompileSdkVersion.invoke(android, 36)
                  } catch (e2: Exception) {}
             }
 

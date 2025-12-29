@@ -19,7 +19,15 @@ class SonarrService {
       );
       
       final List<dynamic> data = response.data;
-      return data.map((json) => Series.fromJson(json)).toList();
+
+      return data.map((json) {
+         if (json['statistics'] != null) {
+            json['episodeFileCount'] = json['statistics']['episodeFileCount'];
+            json['episodeCount'] = json['statistics']['episodeCount'];
+            // json['sizeOnDisk'] = json['statistics']['sizeOnDisk']; // Series model doesn't have sizeOnDisk yet, but good to know
+         }
+         return Series.fromJson(json);
+      }).toList();
     } catch (e) {
       rethrow;
     }
@@ -74,6 +82,7 @@ class SonarrService {
                final fileInfo = filesMap[fileId]!;
                json['path'] = fileInfo['path'];
                json['sizeOnDisk'] = fileInfo['size'];
+               json['hasFile'] = true;
                // print('SonarrService: Injected path ${json['path']} size ${json['sizeOnDisk']}');
             }
          }
@@ -131,6 +140,18 @@ class SonarrService {
     } catch (e) {
       print('Sonarr Add Error: $e');
       return false;
+    }
+  }
+
+  Future<List<dynamic>> lookup(String term) async {
+    try {
+      final response = await _dio.get(
+        '$_baseUrl/api/v3/series/lookup',
+        queryParameters: {'apikey': _apiKey, 'term': term},
+      );
+      return response.data as List<dynamic>;
+    } catch (e) {
+      return [];
     }
   }
 }

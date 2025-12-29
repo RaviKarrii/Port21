@@ -30,6 +30,7 @@ mixin _$Movie {
   int get sizeOnDisk => throw _privateConstructorUsedError;
   int get runtime => throw _privateConstructorUsedError;
   DateTime? get added => throw _privateConstructorUsedError;
+  int get year => throw _privateConstructorUsedError;
 
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
   @JsonKey(ignore: true)
@@ -51,7 +52,8 @@ abstract class $MovieCopyWith<$Res> {
       bool hasFile,
       int sizeOnDisk,
       int runtime,
-      DateTime? added});
+      DateTime? added,
+      int year});
 }
 
 /// @nodoc
@@ -77,6 +79,7 @@ class _$MovieCopyWithImpl<$Res, $Val extends Movie>
     Object? sizeOnDisk = null,
     Object? runtime = null,
     Object? added = freezed,
+    Object? year = null,
   }) {
     return _then(_value.copyWith(
       id: null == id
@@ -119,6 +122,10 @@ class _$MovieCopyWithImpl<$Res, $Val extends Movie>
           ? _value.added
           : added // ignore: cast_nullable_to_non_nullable
               as DateTime?,
+      year: null == year
+          ? _value.year
+          : year // ignore: cast_nullable_to_non_nullable
+              as int,
     ) as $Val);
   }
 }
@@ -140,7 +147,8 @@ abstract class _$$MovieImplCopyWith<$Res> implements $MovieCopyWith<$Res> {
       bool hasFile,
       int sizeOnDisk,
       int runtime,
-      DateTime? added});
+      DateTime? added,
+      int year});
 }
 
 /// @nodoc
@@ -164,6 +172,7 @@ class __$$MovieImplCopyWithImpl<$Res>
     Object? sizeOnDisk = null,
     Object? runtime = null,
     Object? added = freezed,
+    Object? year = null,
   }) {
     return _then(_$MovieImpl(
       id: null == id
@@ -206,6 +215,10 @@ class __$$MovieImplCopyWithImpl<$Res>
           ? _value.added
           : added // ignore: cast_nullable_to_non_nullable
               as DateTime?,
+      year: null == year
+          ? _value.year
+          : year // ignore: cast_nullable_to_non_nullable
+              as int,
     ));
   }
 }
@@ -223,7 +236,8 @@ class _$MovieImpl implements _Movie {
       this.hasFile = false,
       this.sizeOnDisk = 0,
       this.runtime = 0,
-      this.added})
+      this.added,
+      this.year = 0})
       : _images = images;
 
   factory _$MovieImpl.fromJson(Map<String, dynamic> json) =>
@@ -263,10 +277,13 @@ class _$MovieImpl implements _Movie {
   final int runtime;
   @override
   final DateTime? added;
+  @override
+  @JsonKey()
+  final int year;
 
   @override
   String toString() {
-    return 'Movie(id: $id, tmdbId: $tmdbId, title: $title, overview: $overview, path: $path, images: $images, hasFile: $hasFile, sizeOnDisk: $sizeOnDisk, runtime: $runtime, added: $added)';
+    return 'Movie(id: $id, tmdbId: $tmdbId, title: $title, overview: $overview, path: $path, images: $images, hasFile: $hasFile, sizeOnDisk: $sizeOnDisk, runtime: $runtime, added: $added, year: $year)';
   }
 
   @override
@@ -285,7 +302,8 @@ class _$MovieImpl implements _Movie {
             (identical(other.sizeOnDisk, sizeOnDisk) ||
                 other.sizeOnDisk == sizeOnDisk) &&
             (identical(other.runtime, runtime) || other.runtime == runtime) &&
-            (identical(other.added, added) || other.added == added));
+            (identical(other.added, added) || other.added == added) &&
+            (identical(other.year, year) || other.year == year));
   }
 
   @JsonKey(ignore: true)
@@ -301,7 +319,8 @@ class _$MovieImpl implements _Movie {
       hasFile,
       sizeOnDisk,
       runtime,
-      added);
+      added,
+      year);
 
   @JsonKey(ignore: true)
   @override
@@ -328,7 +347,8 @@ abstract class _Movie implements Movie {
       final bool hasFile,
       final int sizeOnDisk,
       final int runtime,
-      final DateTime? added}) = _$MovieImpl;
+      final DateTime? added,
+      final int year}) = _$MovieImpl;
 
   factory _Movie.fromJson(Map<String, dynamic> json) = _$MovieImpl.fromJson;
 
@@ -352,6 +372,8 @@ abstract class _Movie implements Movie {
   int get runtime;
   @override
   DateTime? get added;
+  @override
+  int get year;
   @override
   @JsonKey(ignore: true)
   _$$MovieImplCopyWith<_$MovieImpl> get copyWith =>

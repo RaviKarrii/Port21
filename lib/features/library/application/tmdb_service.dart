@@ -37,6 +37,29 @@ class TmdbService {
     }
   }
 
+  Future<List<dynamic>> getTrendingMovies() async {
+    if (!_isInit) return [];
+    try {
+      // timeWindow: 'day' or 'week'
+      final result = await _tmdb.v3.trending.getTrending(mediaType: MediaType.movie);
+      return result['results'] as List<dynamic>;
+    } catch (e) {
+       debugPrint('TMDB: Get Trending Movies Error: $e');
+       return [];
+    }
+  }
+
+  Future<List<dynamic>> getTrendingSeries() async {
+    if (!_isInit) return [];
+    try {
+      final result = await _tmdb.v3.trending.getTrending(mediaType: MediaType.tv);
+      return result['results'] as List<dynamic>;
+    } catch (e) {
+       debugPrint('TMDB: Get Trending Series Error: $e');
+       return [];
+    }
+  }
+
   Future<List<dynamic>> search(String query, {bool isMovie = true}) async {
     if (!_isInit) return [];
     try {

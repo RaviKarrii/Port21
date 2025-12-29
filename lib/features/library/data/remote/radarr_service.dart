@@ -23,6 +23,7 @@ class RadarrService {
       for (var json in data) {
          if (json['movieFile'] != null && json['movieFile']['path'] != null) {
             json['path'] = json['movieFile']['path'];
+            json['hasFile'] = true;
             print('RadarrService: Overwrote path with ${json['path']}'); 
          } else {
             print('RadarrService: No movieFile for ${json['title']}');

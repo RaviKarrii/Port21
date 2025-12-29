@@ -5,7 +5,6 @@ import '../../features/settings/presentation/settings_screen.dart';
 import '../../features/download/presentation/download_screen.dart';
 import '../../features/player/presentation/player_screen.dart';
 import '../../features/home/presentation/home_screen.dart';
-import '../../features/library/presentation/discovery_screen.dart';
 
 // Helper for the Bottom Navigation Bar
 class ScaffoldWithNavBar extends StatelessWidget {
@@ -23,18 +22,21 @@ class ScaffoldWithNavBar extends StatelessWidget {
       bottomNavigationBar: NavigationBar(
         selectedIndex: navigationShell.currentIndex,
         onDestinationSelected: (int index) {
-          navigationShell.goBranch(index);
+          navigationShell.goBranch(
+             index,
+             initialLocation: index == navigationShell.currentIndex,
+          );
         },
         destinations: const [
           NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home),
-            label: 'Home',
+            icon: Icon(Icons.movie_outlined),
+            selectedIcon: Icon(Icons.movie),
+            label: 'Movies',
           ),
           NavigationDestination(
-            icon: Icon(Icons.explore_outlined),
-            selectedIcon: Icon(Icons.explore),
-            label: 'Discover',
+            icon: Icon(Icons.tv_outlined),
+            selectedIcon: Icon(Icons.tv),
+            label: 'TV',
           ),
           NavigationDestination(
             icon: Icon(Icons.download_outlined),
@@ -53,33 +55,32 @@ class ScaffoldWithNavBar extends StatelessWidget {
 }
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
-final _shellNavigatorKey = GlobalKey<NavigatorState>();
 
 final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     navigatorKey: _rootNavigatorKey,
-    initialLocation: '/home', 
+    initialLocation: '/movies', 
     routes: [
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) {
           return ScaffoldWithNavBar(navigationShell: navigationShell);
         },
         branches: [
-          // Branch Home
+          // Branch Movies
           StatefulShellBranch(
             routes: [
               GoRoute(
-                path: '/home',
-                builder: (context, state) => const HomeScreen(),
+                path: '/movies',
+                builder: (context, state) => const HomeScreen(isMovie: true),
               ),
             ],
           ),
-          // Branch Discover
+          // Branch TV
           StatefulShellBranch(
             routes: [
               GoRoute(
-                path: '/discover',
-                builder: (context, state) => const DiscoveryScreen(),
+                path: '/tv',
+                builder: (context, state) => const HomeScreen(isMovie: false),
               ),
             ],
           ),

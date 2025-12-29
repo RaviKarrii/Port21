@@ -9,6 +9,8 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:port21/features/settings/domain/settings.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:url_launcher/url_launcher.dart'; // Ensure usage for opening folder
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -34,7 +36,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   late TextEditingController _remotePrefixCtrl;
   late TextEditingController _ftpPrefixCtrl;
   String _streamProtocol = 'ftp';
-
+  String _downloadPath = "Loading...";
 
   @override
   void initState() {
@@ -43,7 +45,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     
     _radarrUrlCtrl = TextEditingController(text: currentSettings.radarrUrl);
     _radarrKeyCtrl = TextEditingController(text: currentSettings.radarrApiKey);
-    _sonarrUrlCtrl = TextEditingController(text: currentSettings.sonarrUrl);
     _sonarrUrlCtrl = TextEditingController(text: currentSettings.sonarrUrl);
     _sonarrKeyCtrl = TextEditingController(text: currentSettings.sonarrApiKey);
     _tmdbKeyCtrl = TextEditingController(text: currentSettings.tmdbApiKey);
@@ -56,6 +57,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _remotePrefixCtrl = TextEditingController(text: currentSettings.remotePathPrefix);
     _ftpPrefixCtrl = TextEditingController(text: currentSettings.ftpPathPrefix);
     _streamProtocol = currentSettings.streamProtocol.isEmpty ? 'ftp' : currentSettings.streamProtocol;
+    
+    _loadDownloadPath();
+  }
+
+  Future<void> _loadDownloadPath() async {
+     try {
+        final dir = await getApplicationDocumentsDirectory();
+        final downloadDir = Directory('${dir.path}/Downloads'); // Match DownloadService logic
+        if (!await downloadDir.exists()) {
+           await downloadDir.create(recursive: true);
+        }
+        if (mounted) setState(() => _downloadPath = downloadDir.path);
+     } catch (e) {
+        if (mounted) setState(() => _downloadPath = "Error loading path");
+     }
   }
 
   @override
@@ -74,43 +90,78 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     super.dispose();
   }
 
+  Future<void> _exportSettings() async {
+     final settings = ref.read(settingsRepositoryProvider).getSettings();
+     final jsonStr = jsonEncode(settings.toJson());
+     
+     try {
+        // Platform specific save
+        if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
+           String? outputFile = await FilePicker.platform.saveFile(
+             dialogTitle: 'Save Settings Backup',
+             fileName: 'port21_backup.json',
+             allowedExtensions: ['json'],
+             type: FileType.custom,
+           );
+   
+           if (outputFile != null) {
+              final file = File(outputFile);
+              await file.writeAsString(jsonStr);
+              if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Backup saved successfully")));
+           }
+        } else {
+           // Mobile fallback? Copy to clipboard for now
+           // Clipboard.setData(ClipboardData(text: jsonStr));
+           // ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Settings JSON copied to clipboard")));
+           
+           // Or save to documents and show path
+           final dir = await getApplicationDocumentsDirectory();
+           final file = File('${dir.path}/port21_backup.json');
+           await file.writeAsString(jsonStr);
+           if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Saved to ${file.path}")));
+        }
+     } catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Export failed: $e")));
+     }
+  }
 
-  
+  Future<void> _restoreSettings() async {
+     try {
+       FilePickerResult? result = await FilePicker.platform.pickFiles(
+         type: FileType.custom,
+         allowedExtensions: ['json', 'txt'],
+       );
+
+       if (result != null && result.files.single.path != null) {
+          final file = File(result.files.single.path!);
+          final content = await file.readAsString();
+          _applyConfigFromJson(content);
+       }
+     } catch (e) {
+       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error picking file: $e')));
+     }
+  }
+
   Future<void> _testConnections() async {
      if (!_formKey.currentState!.validate()) {
-       ScaffoldMessenger.of(context).showSnackBar(
-         const SnackBar(content: Text('Please fill all required fields first.')),
-       );
+       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please fill all required fields first.')));
        return;
      }
      
-     ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Testing connections...')),
-     );
+     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Testing connections...')));
      
-     // Create temporary dio instance
      final dio = Dio();
      dio.options.connectTimeout = const Duration(seconds: 5);
      
-     // Test Radarr
      bool radarrOk = false;
      try {
-       final radarrService = RadarrService(
-          dio, 
-          baseUrl: _radarrUrlCtrl.text.trim(), 
-          apiKey: _radarrKeyCtrl.text.trim()
-       );
+       final radarrService = RadarrService(dio, baseUrl: _radarrUrlCtrl.text.trim(), apiKey: _radarrKeyCtrl.text.trim());
        radarrOk = await radarrService.testConnection();
      } catch (_) {}
 
-     // Test Sonarr
      bool sonarrOk = false;
      try {
-       final sonarrService = SonarrService(
-          dio, 
-          baseUrl: _sonarrUrlCtrl.text.trim(), 
-          apiKey: _sonarrKeyCtrl.text.trim()
-       );
+       final sonarrService = SonarrService(dio, baseUrl: _sonarrUrlCtrl.text.trim(), apiKey: _sonarrKeyCtrl.text.trim());
        sonarrOk = await sonarrService.testConnection();
      } catch (_) {}
      
@@ -141,59 +192,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
        );
      }
   }
-
-  Future<void> _scanQrCode() async {
-    try {
-      final result = await Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => Scaffold(
-            appBar: AppBar(title: const Text("Scan Config QR")),
-            body: MobileScanner(
-              onDetect: (capture) {
-                final List<Barcode> barcodes = capture.barcodes;
-                if (barcodes.isNotEmpty) {
-                  final code = barcodes.first.rawValue;
-                  if (code != null) {
-                    Navigator.pop(context, code);
-                  }
-                }
-              },
-            ),
-          ),
-        ),
-      );
-
-      if (result != null && result is String) {
-        _applyConfigFromJson(result);
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error scanning: $e')),
-      );
-    }
-  }
-
-  Future<void> _pickConfigFile() async {
-     try {
-       // Pick file
-       FilePickerResult? result = await FilePicker.platform.pickFiles(
-         type: FileType.custom,
-         allowedExtensions: ['json', 'txt'],
-       );
-
-       if (result != null && result.files.single.path != null) {
-          final file = File(result.files.single.path!);
-          final content = await file.readAsString();
-          _applyConfigFromJson(content);
-       }
-     } catch (e) {
-       ScaffoldMessenger.of(context).showSnackBar(
-         SnackBar(content: Text('Error picking file: $e')),
-       );
-     }
-  }
-
+  
   void _applyConfigFromJson(String jsonStr) {
     try {
       final Map<String, dynamic> json = jsonDecode(jsonStr);
@@ -203,12 +202,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         if (json['radarrApiKey'] != null) _radarrKeyCtrl.text = json['radarrApiKey'];
         if (json['sonarrUrl'] != null) _sonarrUrlCtrl.text = json['sonarrUrl'];
         if (json['sonarrApiKey'] != null) _sonarrKeyCtrl.text = json['sonarrApiKey'];
-        
         if (json['ftpHost'] != null) _ftpHostCtrl.text = json['ftpHost'];
         if (json['ftpPort'] != null) _ftpPortCtrl.text = json['ftpPort'].toString();
         if (json['ftpUser'] != null) _ftpUserCtrl.text = json['ftpUser'];
         if (json['ftpPassword'] != null) _ftpPassCtrl.text = json['ftpPassword'];
-        
         if (json['remotePathPrefix'] != null) _remotePrefixCtrl.text = json['remotePathPrefix'];
         if (json['ftpPathPrefix'] != null) _ftpPrefixCtrl.text = json['ftpPathPrefix'];
         if (json['streamProtocol'] != null) {
@@ -218,13 +215,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         }
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Configuration Applied! Click Save to persist.')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Configuration Applied! Click Save to persist.')));
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Invalid QR Configuration Format')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Invalid JSON Configuration Format')));
     }
   }
 
@@ -249,11 +242,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
       await repo.saveSettings(newSettings);
       
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Settings Saved')),
-        );
-      }
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Settings Saved')));
     }
   }
 
@@ -263,10 +252,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       appBar: AppBar(
         title: const Text("Settings"),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.qr_code_scanner, color: Colors.white),
-            onPressed: _scanQrCode,
-          ),
           IconButton(
             icon: const Icon(Icons.save),
             onPressed: _saveSettings,
@@ -278,16 +263,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-             // Scan Config Button (Redundant)
+             // Backup / Restore Row
              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.only(bottom: 24),
                 child: Row(
                   children: [
                     Expanded(
                       child: FilledButton.icon(
-                         onPressed: _scanQrCode,
-                         icon: const Icon(Icons.qr_code_scanner),
-                         label: const Text("SCAN QR"),
+                         onPressed: _exportSettings,
+                         icon: const Icon(Icons.download),
+                         label: const Text("BACKUP JSON"),
                          style: FilledButton.styleFrom(
                             backgroundColor: Colors.teal,
                             padding: const EdgeInsets.symmetric(vertical: 16),
@@ -297,9 +282,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: FilledButton.icon(
-                         onPressed: _pickConfigFile,
+                         onPressed: _restoreSettings,
                          icon: const Icon(Icons.upload_file),
-                         label: const Text("UPLOAD JSON"),
+                         label: const Text("RESTORE JSON"),
                          style: FilledButton.styleFrom(
                             backgroundColor: Colors.orangeAccent,
                             padding: const EdgeInsets.symmetric(vertical: 16),
@@ -309,8 +294,56 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   ],
                 ),
              ),
-
-             // Test Connection Button
+             
+             // Download Location Section
+             _buildSectionHeader("Storage & Downloads"),
+             Container(
+               padding: const EdgeInsets.all(12),
+               decoration: BoxDecoration(
+                 color: const Color(0xFF1E1E1E),
+                 borderRadius: BorderRadius.circular(8),
+                 border: Border.all(color: Colors.white10),
+               ),
+               child: Column(
+                 crossAxisAlignment: CrossAxisAlignment.start,
+                 children: [
+                    const Text("Download Location:", style: TextStyle(color: Colors.grey, fontSize: 12)),
+                    const SizedBox(height: 4),
+                    SelectableText(_downloadPath, style: const TextStyle(color: Colors.white, fontFamily: 'Courier')),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                         TextButton.icon(
+                           onPressed: () {
+                              _loadDownloadPath().then((_) {
+                                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Refreshed: $_downloadPath")));
+                              });
+                           },
+                           icon: const Icon(Icons.refresh, size: 16),
+                           label: const Text("REFRESH"),
+                         ),
+                         const Spacer(),
+                         OutlinedButton.icon(
+                           onPressed: () async {
+                              final uri = Uri.parse('file://$_downloadPath');
+                              if (await canLaunchUrl(uri)) {
+                                 launchUrl(uri);
+                              } else {
+                                 // Fallback try open
+                                 launchUrl(Uri.parse('file://${_downloadPath}'));
+                              }
+                           },
+                           icon: const Icon(Icons.folder_open),
+                           label: const Text("OPEN FOLDER"),
+                         )
+                      ],
+                    )
+                 ],
+               ),
+             ),
+             const SizedBox(height: 24),
+             
+             // Connections
              Padding(
                 padding: const EdgeInsets.only(bottom: 24),
                 child: OutlinedButton.icon(
@@ -318,32 +351,29 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                    icon: const Icon(Icons.wifi_find),
                    label: const Text("TEST CONNECTIONS"),
                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Colors.blueAccent),
-                      foregroundColor: Colors.blueAccent,
                       padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
                    ),
                 ),
              ),
              
             _buildSectionHeader("Radarr (Movies)"),
-            _buildTextField("Base URL", _radarrUrlCtrl, hint: "http://192.168.1.5:7878/api/v3"),
+            _buildTextField("Base URL", _radarrUrlCtrl),
             _buildTextField("API Key", _radarrKeyCtrl),
             
             const SizedBox(height: 24),
             _buildSectionHeader("Sonarr (Series)"),
-            _buildTextField("Base URL", _sonarrUrlCtrl, hint: "http://192.168.1.5:8989/api/v3"),
+            _buildTextField("Base URL", _sonarrUrlCtrl),
             _buildTextField("API Key", _sonarrKeyCtrl),
 
             const SizedBox(height: 24),
-            _buildSectionHeader("TMDB (Discovery & Images)"),
-            _buildTextField("API Key (v3)", _tmdbKeyCtrl),
+            _buildSectionHeader("TMDB"),
+            _buildTextField("API Key", _tmdbKeyCtrl),
             
             const SizedBox(height: 24),
             _buildSectionHeader("FTP Configuration"),
             Row(
               children: [
-                Expanded(flex: 3, child: _buildTextField("Host", _ftpHostCtrl, hint: "192.168.1.5")),
+                Expanded(flex: 3, child: _buildTextField("Host", _ftpHostCtrl)),
                 const SizedBox(width: 8),
                 Expanded(flex: 1, child: _buildTextField("Port", _ftpPortCtrl, isNumber: true)),
               ],
@@ -351,18 +381,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             _buildTextField("Username", _ftpUserCtrl),
             _buildTextField("Password", _ftpPassCtrl, isObscure: true),
             
-
-            
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
               value: _streamProtocol,
               dropdownColor: const Color(0xFF282C34),
-              decoration: const InputDecoration(
-                labelText: "Protocol",
-                labelStyle: TextStyle(color: Colors.tealAccent),
-                enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.white54)),
-                focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.tealAccent)),
-              ),
+              decoration: const InputDecoration(labelText: "Protocol", filled: true, fillColor: Color(0xFF1E1E1E)), // Better UI
               style: const TextStyle(color: Colors.white),
               items: const [
                 DropdownMenuItem(value: 'ftp', child: Text("FTP (Plain)")),
@@ -376,13 +399,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
             const SizedBox(height: 24),
             _buildSectionHeader("Path Mapping"),
-            const Text(
-              "Maps local file paths from Radarr (e.g. /mnt/media) to FTP paths (e.g. /media).",
-              style: TextStyle(color: Colors.grey, fontSize: 12),
-            ),
-            const SizedBox(height: 8),
-            _buildTextField("Remote Prefix (Remove)", _remotePrefixCtrl, hint: "/mnt/media"),
-            _buildTextField("FTP Prefix (Add)", _ftpPrefixCtrl, hint: "/media"),
+            _buildTextField("Remote Prefix (Server)", _remotePrefixCtrl),
+            _buildTextField("FTP Prefix (Client)", _ftpPrefixCtrl),
             
             const SizedBox(height: 48), // Bottom padding
           ],
@@ -421,12 +439,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         decoration: InputDecoration(
           labelText: label,
           hintText: hint,
-          border: const OutlineInputBorder(),
+          filled: true,
+          fillColor: const Color(0xFF1E1E1E),
+          border: const OutlineInputBorder(borderSide: BorderSide.none),
           isDense: true,
         ),
         validator: (value) {
           if (!isNumber && (value == null || value.isEmpty)) {
-            // Optional fields logic? Let's make URLs required.
             if (label.contains("URL") || label.contains("Host")) {
                return 'Required';
             }

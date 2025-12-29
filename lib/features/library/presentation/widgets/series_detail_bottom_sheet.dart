@@ -1,32 +1,115 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_fonts/google_fonts.dart'; // Added
+import 'package:google_fonts/google_fonts.dart'; 
 import 'package:port21/features/library/domain/series.dart';
-import 'package:port21/features/library/domain/episode.dart'; // Added
-import 'package:port21/features/library/application/library_providers.dart'; // Added
+import 'package:port21/features/library/domain/episode.dart'; 
+import 'package:port21/features/library/application/library_providers.dart'; 
 import 'package:port21/features/settings/data/settings_repository.dart';
 import 'package:port21/features/download/data/download_service.dart';
-
-import 'package:port21/core/utils/path_mapper.dart'; // Added
-import 'package:port21/features/library/application/file_verification_service.dart'; // Added
-import 'package:port21/features/player/application/video_launcher.dart'; // Added
+import 'package:port21/core/utils/path_mapper.dart'; 
+import 'package:port21/features/library/application/file_verification_service.dart'; 
+import 'package:port21/features/player/application/video_launcher.dart'; 
 import 'package:go_router/go_router.dart';
-import 'package:isar/isar.dart'; // Added
-import 'package:port21/features/download/domain/downloaded_media.dart'; // Added
+import 'package:isar/isar.dart'; 
+import 'package:port21/features/download/domain/downloaded_media.dart'; 
+import 'package:port21/features/library/data/library_repository.dart';
 
-class SeriesDetailBottomSheet extends ConsumerWidget {
+class SeriesDetailBottomSheet extends ConsumerStatefulWidget {
   final Series series;
 
   const SeriesDetailBottomSheet({Key? key, required this.series}) : super(key: key);
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SeriesDetailBottomSheet> createState() => _SeriesDetailBottomSheetState();
+}
+
+class _SeriesDetailBottomSheetState extends ConsumerState<SeriesDetailBottomSheet> {
+  bool _isLoading = false;
+  Series? _existingSeries;
+  bool _isChecking = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkLibraryStatus();
+  }
+
+  Future<void> _checkLibraryStatus() async {
+     if (widget.series.id > 0) {
+        if (mounted) setState(() {
+           _existingSeries = widget.series;
+           _isChecking = false;
+        });
+        return;
+     }
+
+     try {
+        final seriesList = await ref.read(libraryRepositoryProvider).getSeries(forceRefresh: false);
+        final match = seriesList.where((s) => s.tmdbId == widget.series.tmdbId).firstOrNull;
+        if (mounted) setState(() {
+           _existingSeries = match;
+           _isChecking = false;
+        });
+     } catch (e) {
+        if (mounted) setState(() => _isChecking = false);
+     }
+  }
+
+  Future<void> _requestSeries() async {
+     setState(() => _isLoading = true);
+     try {
+       final sonarr = ref.read(sonarrServiceProvider);
+       if (sonarr == null) throw Exception("Sonarr not configured");
+
+       // Lookup first to get TVDB ID and valid payload structure
+       final lookupResults = await sonarr.lookup("tmdb:${widget.series.tmdbId}");
+       if (lookupResults.isEmpty) throw Exception("Series not found in Sonarr lookup");
+       
+       final payload = lookupResults.first;
+       
+       // Get Root Paths
+       final rootFolders = await sonarr.getRootFolders();
+       if (rootFolders.isEmpty) throw Exception("No Root Folders configured in Sonarr");
+       final rootPath = rootFolders.first['path'];
+       
+       // Modify Payload
+       payload['rootFolderPath'] = rootPath;
+       payload['qualityProfileId'] = 1; // Default
+       payload['monitored'] = true;
+       payload['addOptions'] = {'searchForMissingEpisodes': true};
+       
+       final success = await sonarr.addSeries(payload);
+
+       if (success) {
+          if (mounted) {
+             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Request Sent! Searching..."), backgroundColor: Colors.green));
+             Navigator.pop(context); 
+          }
+       } else {
+          throw Exception("Sonarr returned failure");
+       }
+
+     } catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Request Failed: $e"), backgroundColor: Colors.red));
+     } finally {
+        if (mounted) setState(() => _isLoading = false);
+     }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final episodeCount = series.episodeCount;
-    final statusSafe = series.status ?? 'Unknown';
-    final episodesAsync = ref.watch(fetchEpisodesProvider(series.id)); // Watch episodes
+    final targetSeries = _existingSeries ?? widget.series;
+    final isLibraryField = _existingSeries != null; // It is in our library (tracked)
     
-    return DraggableScrollableSheet( // Use Draggable for better list experience
+    // If not in library, we show Request UI.
+    // If in library, we show Episodes.
+
+    final episodesAsync = isLibraryField 
+        ? ref.watch(fetchEpisodesProvider(targetSeries.id)) 
+        : const AsyncValue<List<Episode>>.loading(); // Or data([]) if not fetching
+    
+    return DraggableScrollableSheet( 
       initialChildSize: 0.9,
       minChildSize: 0.5,
       maxChildSize: 0.95,
@@ -58,65 +141,85 @@ class SeriesDetailBottomSheet extends ConsumerWidget {
                       ),
                       const SizedBox(height: 24),
                       Text(
-                        series.title.toUpperCase(), 
+                        widget.series.title.toUpperCase(), 
                         style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900, letterSpacing: 1.5),
                       ),
                       const SizedBox(height: 16),
                       Row(
                         children: [
-                          _buildFlatChip(context, '$episodeCount EPISODES'),
-                          const SizedBox(width: 8),
-                          _buildFlatChip(context, statusSafe.toUpperCase(), 
-                              color: statusSafe.toLowerCase() == 'continuing' ? Colors.green.withOpacity(0.2) : Colors.grey.withOpacity(0.2),
-                              textColor: statusSafe.toLowerCase() == 'continuing' ? Colors.greenAccent : Colors.white70),
-                          const SizedBox(width: 8),
-                          if (series.episodeFileCount > 0)
-                             _buildFlatChip(context, 'FILES: ${series.episodeFileCount}', icon: Icons.sd_storage),
+                          if (isLibraryField) _buildFlatChip(context, '${targetSeries.episodeCount} EPISODES'),
+                          if (isLibraryField) const SizedBox(width: 8),
+                          _buildFlatChip(context, isLibraryField ? (targetSeries.status ?? 'UNKNOWN').toUpperCase() : 'NEW', 
+                              color: isLibraryField ? Colors.green.withOpacity(0.2) : Colors.blue.withOpacity(0.2),
+                              textColor: isLibraryField ? Colors.greenAccent : Colors.blueAccent),
                         ],
                       ),
                       const SizedBox(height: 24),
                       Text(
-                        series.overview,
+                        widget.series.overview,
                         style: theme.textTheme.bodyMedium?.copyWith(height: 1.5, color: Colors.white70),
                         maxLines: 4,
                         overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 24),
-                      const Divider(color: Colors.white10),
+                      
+                      // Action Logic
+                      if (_isChecking)
+                         const Center(child: CircularProgressIndicator())
+                      else if (!isLibraryField)
+                         SizedBox(
+                           width: double.infinity,
+                           height: 56,
+                           child: FilledButton.icon(
+                              onPressed: _isLoading ? null : _requestSeries,
+                              icon: _isLoading 
+                                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
+                                : const Icon(Icons.add_circle_outline),
+                              label: Text(_isLoading ? "PROCESSING..." : "REQUEST SERIES"),
+                              style: FilledButton.styleFrom(backgroundColor: Colors.blueAccent),
+                           ),
+                         )
+                      else
+                         const Divider(color: Colors.white10),
                     ],
                   ),
                 ),
               ),
 
-              // Episodes Logic
-              episodesAsync.when(
-                data: (episodes) {
-                   final seasons = <int, List<Episode>>{};
-                   for (var ep in episodes) {
-                     if (!seasons.containsKey(ep.seasonNumber)) seasons[ep.seasonNumber] = [];
-                     seasons[ep.seasonNumber]!.add(ep);
-                   }
-                   final sortedSeasonNums = seasons.keys.toList()..sort();
+              // Episodes List (Only if in Library)
+              if (isLibraryField)
+                episodesAsync.when(
+                  data: (episodes) {
+                     if (episodes.isEmpty) {
+                        return const SliverToBoxAdapter(child: Padding(padding: EdgeInsets.all(20), child: Center(child: Text("Monitoring... No episodes yet."))));
+                     }
+                     
+                     final seasons = <int, List<Episode>>{};
+                     for (var ep in episodes) {
+                       if (!seasons.containsKey(ep.seasonNumber)) seasons[ep.seasonNumber] = [];
+                       seasons[ep.seasonNumber]!.add(ep);
+                     }
+                     final sortedSeasonNums = seasons.keys.toList()..sort();
 
-                   return SliverList(
-                     delegate: SliverChildBuilderDelegate(
-                       (context, index) {
-                         final seasonNum = sortedSeasonNums[index];
-                         final seasonEpisodes = seasons[seasonNum]!;
-                         seasonEpisodes.sort((a, b) => a.episodeNumber.compareTo(b.episodeNumber));
-                                                  return _SeasonExpansionTile(
-                            seasonNumber: seasonNum, 
-                            episodes: seasonEpisodes,
-                            seriesTmdbId: series.tmdbId, // Pass ID
-                          );
-                       },
-                       childCount: sortedSeasonNums.length,
-                     ),
-                   );
-                },
-                loading: () => const SliverToBoxAdapter(child: Center(child: CircularProgressIndicator())),
-                error: (e, s) => SliverToBoxAdapter(child: Center(child: Text("Error: $e"))),
-              ),
+                     return SliverList(
+                       delegate: SliverChildBuilderDelegate(
+                         (context, index) {
+                           final seasonNum = sortedSeasonNums[index];
+                           final seasonEpisodes = seasons[seasonNum]!;
+                           seasonEpisodes.sort((a, b) => a.episodeNumber.compareTo(b.episodeNumber));
+                           return _SeasonExpansionTile(
+                              seasonNumber: seasonNum, 
+                              episodes: seasonEpisodes,
+                              seriesTmdbId: targetSeries.tmdbId, 
+                            );
+                         },
+                         childCount: sortedSeasonNums.length,
+                       ),
+                     );
+                  },
+                  loading: () => const SliverToBoxAdapter(child: Center(child: CircularProgressIndicator())),
+                  error: (e, s) => SliverToBoxAdapter(child: Center(child: Text("Error: $e"))),
+                ),
               
               const SliverPadding(padding: EdgeInsets.only(bottom: 40)),
             ],
@@ -162,7 +265,6 @@ class _SeasonExpansionTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Count available files
     final availableCount = episodes.where((e) => e.hasFile).length;
 
     return Container(
@@ -187,16 +289,13 @@ class _SeasonExpansionTile extends ConsumerWidget {
               if (availableCount > 0)
                 TextButton.icon(
                   onPressed: () async {
-                     // Download Season Logic
                      int queued = 0;
                      for (final ep in episodes) {
                        if (ep.hasFile && ep.path != null) {
-                          // Format: "S01E01 - Title"
                           final title = "S${seasonNumber.toString().padLeft(2, '0')}E${ep.episodeNumber.toString().padLeft(2, '0')} - ${ep.title ?? 'Episode'}";
                           final contentId = 'episode_${seriesTmdbId}_s${ep.seasonNumber}_e${ep.episodeNumber}';
                           ref.read(downloadServiceProvider).downloadFile(ep.path!, title, contentId);
                           queued++;
-                          // Small delay to ensure order
                           await Future.delayed(const Duration(milliseconds: 50));
                        }
                      }
@@ -228,7 +327,7 @@ class _EpisodeTile extends ConsumerStatefulWidget {
 
 class _EpisodeTileState extends ConsumerState<_EpisodeTile> {
   bool _isLoading = false;
-  bool _isDownloaded = false; // Added state
+  bool _isDownloaded = false; 
 
   @override
   void initState() {
@@ -249,7 +348,6 @@ class _EpisodeTileState extends ConsumerState<_EpisodeTile> {
 
   @override
   Widget build(BuildContext context) {
-    // "Available" Logic
     final isAvailable = widget.episode.hasFile;
     
     return Container(
@@ -286,7 +384,6 @@ class _EpisodeTileState extends ConsumerState<_EpisodeTile> {
                      ),
                    ),
                  const SizedBox(height: 8),
-                  const SizedBox(height: 8),
                   Row(
                     children: [
                        Container(
@@ -321,7 +418,6 @@ class _EpisodeTileState extends ConsumerState<_EpisodeTile> {
                    IconButton(
                     icon: const Icon(Icons.play_arrow_sharp, color: Colors.white),
                     onPressed: () async {
-                       // Play Logic Copy
                         setState(() => _isLoading = true);
                         if (widget.episode.path != null && widget.episode.path!.isNotEmpty) {
                           final settings = ref.read(settingsRepositoryProvider).getSettings();
@@ -377,17 +473,17 @@ class _EpisodeTileState extends ConsumerState<_EpisodeTile> {
                         icon: const Icon(Icons.download_sharp, color: Colors.white70),
                         onPressed: () {
                            if (widget.episode.path != null) {
-                              final title = "S${widget.episode.seasonNumber.toString().padLeft(2, '0')}E${widget.episode.episodeNumber.toString().padLeft(2, '0')} - ${widget.episode.title ?? 'Episode'}";
-                              final contentId = 'episode_${widget.seriesTmdbId}_s${widget.episode.seasonNumber}_e${widget.episode.episodeNumber}';
-                              ref.read(downloadServiceProvider).downloadFile(widget.episode.path!, title, contentId);
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Download Queued")));
+                               final title = "S${widget.episode.seasonNumber.toString().padLeft(2, '0')}E${widget.episode.episodeNumber.toString().padLeft(2, '0')} - ${widget.episode.title ?? 'Episode'}";
+                               final contentId = 'episode_${widget.seriesTmdbId}_s${widget.episode.seasonNumber}_e${widget.episode.episodeNumber}';
+                               ref.read(downloadServiceProvider).downloadFile(widget.episode.path!, title, contentId);
+                               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Download Queued")));
                            }
                         },
                       ),
                 ],
             )
           ] else
-            const SizedBox(), // Nothing if not available (cannot play or download)
+            const SizedBox(), 
         ],
       ),
     );

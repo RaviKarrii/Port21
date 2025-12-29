@@ -22,6 +22,7 @@ _$MovieImpl _$$MovieImplFromJson(Map<String, dynamic> json) => _$MovieImpl(
       added: json['added'] == null
           ? null
           : DateTime.parse(json['added'] as String),
+      year: (json['year'] as num?)?.toInt() ?? 0,
     );
 
 Map<String, dynamic> _$$MovieImplToJson(_$MovieImpl instance) =>
@@ -36,6 +37,7 @@ Map<String, dynamic> _$$MovieImplToJson(_$MovieImpl instance) =>
       'sizeOnDisk': instance.sizeOnDisk,
       'runtime': instance.runtime,
       'added': instance.added?.toIso8601String(),
+      'year': instance.year,
     };
 
 _$MovieImageImpl _$$MovieImageImplFromJson(Map<String, dynamic> json) =>

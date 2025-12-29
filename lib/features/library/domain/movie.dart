@@ -17,6 +17,7 @@ class Movie with _$Movie {
     @Default(0) int sizeOnDisk,
     @Default(0) int runtime,
     DateTime? added,
+    @Default(0) int year, // Added year
   }) = _Movie;
 
   factory Movie.fromJson(Map<String, dynamic> json) => _$MovieFromJson(json);

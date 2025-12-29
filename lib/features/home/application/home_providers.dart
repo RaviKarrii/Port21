@@ -31,47 +31,220 @@ class HomeContent {
   });
 }
 
+// --- AVAILABLE (LOCAL) RAILS ---
+
 @riverpod
-Future<List<HomeContent>> recentlyAddedRails(RecentlyAddedRailsRef ref) async {
-  // Combine Movies and Series? Or just return mixed?
-  // Let's return mixed for now, sorted by ID (proxy for recency)
+Future<List<HomeContent>> availableMoviesRail(AvailableMoviesRailRef ref) async {
   final movies = await ref.watch(fetchMoviesProvider.future);
+  
+  // Filter for downloaded only
+  final available = movies.where((m) => m.hasFile).toList();
+  
+  // Link Progress? (Optional, maybe later)
+
+  return available.map((m) {
+     return HomeContent(
+        title: m.title,
+        posterUrl: m.images.firstWhere((i) => i.coverType == 'poster', orElse: () => MovieImage(coverType: 'none', url: '')).remoteUrl ?? m.images.firstOrNull?.url,
+        backdropUrl: m.images.firstWhere((i) => i.coverType == 'backdrop', orElse: () => MovieImage(coverType: 'none', url: '')).remoteUrl,
+        contentId: 'movie_${m.tmdbId}',
+        isMovie: true,
+        originalItem: m,
+        overview: m.overview
+     );
+  }).toList();
+}
+
+@riverpod
+Future<List<HomeContent>> availableSeriesRail(AvailableSeriesRailRef ref) async {
   final series = await ref.watch(fetchSeriesProvider.future);
-
-  final mixed = <HomeContent>[];
-
-  // Map Movies
-  for (var m in movies) {
-    mixed.add(HomeContent(
-      title: m.title,
-      posterUrl: m.images.firstWhere((i) => i.coverType == 'poster', orElse: () => MovieImage(coverType: 'none', url: '')).remoteUrl ?? m.images.firstOrNull?.url,
-      // Use remoteUrl if available, fall back to whatever we have. 
-      // Note: LibraryRepo usually populates this with TMDB url now.
-      contentId: 'movie_${m.tmdbId}',
-      isMovie: true,
-      originalItem: m,
-      overview: m.overview,
-    ));
-  }
-
-  // Map Series
-  for (var s in series) {
-    mixed.add(HomeContent(
-      title: s.title,
-      posterUrl: s.images.firstWhere((i) => i.coverType == 'poster', orElse: () => SeriesImage(coverType: 'none', url: '')).remoteUrl ?? s.images.firstOrNull?.url,
-      contentId: s.tmdbId.toString(), // or TVDB? 
-      isMovie: false,
-      originalItem: s,
-      overview: s.overview,
-    ));
-  }
   
-  // Shuffle or Sort? ID based sort (descending) approximates "Recently Added"
-  // Assuming higher ID = newer in DB.
-  // Actually, random shuffle is better for "Discovery" if we don't track dateAdded.
-  mixed.shuffle(); 
+  // Filter for downloaded only
+  final available = series.where((s) => s.episodeFileCount > 0).toList();
+
+  return available.map((s) {
+     return HomeContent(
+        title: s.title,
+        posterUrl: s.images.firstWhere((i) => i.coverType == 'poster', orElse: () => SeriesImage(coverType: 'none', url: '')).remoteUrl ?? s.images.firstOrNull?.url,
+        backdropUrl: s.images.firstWhere((i) => i.coverType == 'backdrop', orElse: () => SeriesImage(coverType: 'none', url: '')).remoteUrl,
+        contentId: 'series_${s.tmdbId}',
+        isMovie: false,
+        originalItem: s,
+        overview: s.overview
+     );
+  }).toList();
+}
+
+// --- DISCOVER (TMDB) RAILS ---
+
+@riverpod
+Future<List<HomeContent>> trendingMoviesRail(TrendingMoviesRailRef ref) async {
+  final tmdb = ref.watch(tmdbServiceProvider);
+  if (tmdb == null) return [];
   
-  return mixed.take(10).toList();
+  final results = await tmdb.getTrendingMovies();
+  
+  return results.map((m) {
+     final tmdbId = m['id'] as int;
+     final title = m['title'] ?? 'Unknown';
+     final posterPath = m['poster_path'];
+     final backdropPath = m['backdrop_path'];
+     final releaseDate = m['release_date'] as String?;
+     final year = releaseDate != null && releaseDate.length >= 4 ? int.tryParse(releaseDate.substring(0, 4)) ?? 0 : 0;
+     
+     // Construct transient Movie object for Detail Sheet fallback
+     final movie = Movie(
+        id: -tmdbId, 
+        tmdbId: tmdbId,
+        title: title,
+        overview: m['overview'] ?? '',
+        year: year,
+        images: [
+           if (posterPath != null) MovieImage(coverType: 'poster', url: '', remoteUrl: 'https://image.tmdb.org/t/p/w500$posterPath'),
+           if (backdropPath != null) MovieImage(coverType: 'backdrop', url: '', remoteUrl: 'https://image.tmdb.org/t/p/original$backdropPath'),
+        ]
+     );
+
+     return HomeContent(
+        title: title,
+        posterUrl: posterPath != null ? 'https://image.tmdb.org/t/p/w500$posterPath' : null,
+        backdropUrl: backdropPath != null ? 'https://image.tmdb.org/t/p/original$backdropPath' : null,
+        contentId: 'movie_$tmdbId', 
+        isMovie: true,
+        originalItem: movie,
+        overview: m['overview']
+     );
+  }).toList();
+}
+
+@riverpod
+Future<List<HomeContent>> trendingSeriesRail(TrendingSeriesRailRef ref) async {
+  final tmdb = ref.watch(tmdbServiceProvider);
+  if (tmdb == null) return [];
+  
+  final results = await tmdb.getTrendingSeries();
+  
+  return results.map((s) {
+     final tmdbId = s['id'] as int;
+     final title = s['name'] ?? 'Unknown'; 
+     final posterPath = s['poster_path'];
+     final backdropPath = s['backdrop_path'];
+     
+     final series = Series(
+        id: -tmdbId,
+        tmdbId: tmdbId,
+        title: title,
+        overview: s['overview'] ?? '',
+        images: [
+           if (posterPath != null) SeriesImage(coverType: 'poster', url: '', remoteUrl: 'https://image.tmdb.org/t/p/w500$posterPath'),
+           if (backdropPath != null) SeriesImage(coverType: 'backdrop', url: '', remoteUrl: 'https://image.tmdb.org/t/p/original$backdropPath'),
+        ]
+     );
+
+     return HomeContent(
+        title: title,
+        posterUrl: posterPath != null ? 'https://image.tmdb.org/t/p/w500$posterPath' : null,
+        backdropUrl: backdropPath != null ? 'https://image.tmdb.org/t/p/original$backdropPath' : null,
+        contentId: 'series_$tmdbId',
+        isMovie: false,
+        originalItem: series,
+        overview: s['overview']
+     );
+  }).toList();
+}
+
+@riverpod
+Future<List<HomeContent>> popularMoviesRail(PopularMoviesRailRef ref) async {
+  final tmdb = ref.watch(tmdbServiceProvider);
+  if (tmdb == null) return [];
+  
+  final results = await tmdb.getPopularMovies();
+  
+  return results.map((m) {
+     final tmdbId = m['id'] as int;
+     final title = m['title'] ?? 'Unknown';
+     final posterPath = m['poster_path'];
+     final releaseDate = m['release_date'] as String?;
+     final year = releaseDate != null && releaseDate.length >= 4 ? int.tryParse(releaseDate.substring(0, 4)) ?? 0 : 0;
+     
+     final movie = Movie(
+        id: -tmdbId, 
+        tmdbId: tmdbId,
+        title: title,
+        overview: m['overview'] ?? '',
+        year: year,
+        images: [
+           if (posterPath != null) MovieImage(coverType: 'poster', url: '', remoteUrl: 'https://image.tmdb.org/t/p/w500$posterPath'),
+        ]
+     );
+
+     return HomeContent(
+        title: title,
+        posterUrl: posterPath != null ? 'https://image.tmdb.org/t/p/w500$posterPath' : null,
+        contentId: 'movie_$tmdbId',
+        isMovie: true,
+        originalItem: movie,
+        overview: m['overview']
+     );
+  }).toList();
+}
+
+@riverpod
+Future<List<HomeContent>> popularSeriesRail(PopularSeriesRailRef ref) async {
+   final tmdb = ref.watch(tmdbServiceProvider);
+  if (tmdb == null) return [];
+  
+  final results = await tmdb.getPopularSeries();
+  
+  return results.map((s) {
+     final tmdbId = s['id'] as int;
+     final title = s['name'] ?? 'Unknown';
+     final posterPath = s['poster_path'];
+     
+     final series = Series(
+        id: -tmdbId,
+        tmdbId: tmdbId,
+        title: title,
+        overview: s['overview'] ?? '',
+        images: [
+           if (posterPath != null) SeriesImage(coverType: 'poster', url: '', remoteUrl: 'https://image.tmdb.org/t/p/w500$posterPath'),
+        ]
+     );
+
+     return HomeContent(
+        title: title,
+        posterUrl: posterPath != null ? 'https://image.tmdb.org/t/p/w500$posterPath' : null,
+        contentId: 'series_$tmdbId',
+        isMovie: false,
+        originalItem: series,
+        overview: s['overview']
+     );
+  }).toList();
+}
+
+// --- UTILS ---
+
+@riverpod
+Future<HomeContent?> featuredContent(FeaturedContentRef ref, bool isMovie) async {
+  // Prefer Available content for Feature?
+  // Or Trending? 
+  // Let's mix. Try available first.
+  if (isMovie) {
+     final avail = await ref.watch(availableMoviesRailProvider.future);
+     if (avail.isNotEmpty) {
+        return avail[Random().nextInt(avail.length)];
+     }
+     final trend = await ref.watch(trendingMoviesRailProvider.future);
+     if (trend.isNotEmpty) return trend.first;
+  } else {
+     final avail = await ref.watch(availableSeriesRailProvider.future);
+     if (avail.isNotEmpty) {
+        return avail[Random().nextInt(avail.length)];
+     }
+     final trend = await ref.watch(trendingSeriesRailProvider.future);
+     if (trend.isNotEmpty) return trend.first;
+  }
+  return null;
 }
 
 @riverpod
@@ -80,24 +253,21 @@ Future<List<HomeContent>> continueWatchingRail(ContinueWatchingRailRef ref) asyn
   if (positions.isEmpty) return [];
 
   final movies = await ref.watch(fetchMoviesProvider.future);
-  final series = await ref.watch(fetchSeriesProvider.future);
+  // final series = await ref.watch(fetchSeriesProvider.future); // TODO: Series matching
   
   final continuing = <HomeContent>[];
-
-  // Sort positions by last updated? The Repo doesn't have updated timestamp visible easily 
-  // without modifying schema. For now, just take them as they come.
   
   for (var p in positions) {
-    if (p.positionSeconds < 60) continue; // Skip minimal progress
-    if (p.positionSeconds >= p.durationSeconds * 0.95) continue; // Skip finished
+    if (p.positionSeconds < 60) continue; 
+    if (p.positionSeconds >= p.durationSeconds * 0.95) continue; 
 
-    // Find match
-    // Check Movie
+    // Match Local Movie
     try {
       final m = movies.firstWhere((m) => 'movie_${m.tmdbId}' == p.contentId);
       continuing.add(HomeContent(
         title: m.title,
         posterUrl: m.images.firstWhere((i) => i.coverType == 'poster', orElse: () => MovieImage(coverType: 'none', url: '')).remoteUrl,
+        backdropUrl: m.images.firstWhere((i) => i.coverType == 'backdrop', orElse: () => MovieImage(coverType: 'none', url: '')).remoteUrl,
         contentId: p.contentId,
         isMovie: true,
         originalItem: m,
@@ -105,49 +275,7 @@ Future<List<HomeContent>> continueWatchingRail(ContinueWatchingRailRef ref) asyn
       ));
       continue;
     } catch (_) {}
-
-    // Check Series (ID might be mapped differently, need to be careful)
-    // Series playback usually tracks EPISODE ID. This is tricky.
-    // If we play series, we save by filename or episode ID.
-    // If we only have series metadata, we might not match easily.
-    // For MVP, enable Movies first.
   }
 
   return continuing;
-}
-
-@riverpod
-Future<List<HomeContent>> allMoviesRail(AllMoviesRailRef ref) async {
-  final movies = await ref.watch(fetchMoviesProvider.future);
-  return movies.map((m) => HomeContent(
-      title: m.title,
-      posterUrl: m.images.firstWhere((i) => i.coverType == 'poster', orElse: () => MovieImage(coverType: 'none', url: '')).remoteUrl ?? m.images.firstOrNull?.url,
-      contentId: 'movie_${m.tmdbId}',
-      isMovie: true,
-      originalItem: m,
-      overview: m.overview,
-  )).toList()..sort((a,b) => a.title.compareTo(b.title));
-}
-
-@riverpod
-Future<List<HomeContent>> allSeriesRail(AllSeriesRailRef ref) async {
-  final series = await ref.watch(fetchSeriesProvider.future);
-  return series.map((s) => HomeContent(
-      title: s.title,
-      posterUrl: s.images.firstWhere((i) => i.coverType == 'poster', orElse: () => SeriesImage(coverType: 'none', url: '')).remoteUrl ?? s.images.firstOrNull?.url,
-      contentId: s.tmdbId.toString(),
-      isMovie: false,
-      originalItem: s,
-      overview: s.overview,
-  )).toList()..sort((a,b) => a.title.compareTo(b.title));
-}
-
-@riverpod
-Future<HomeContent?> featuredContent(FeaturedContentRef ref) async {
-  // Pick one random item, preferably with a backdrop
-  final recent = await ref.watch(recentlyAddedRailsProvider.future);
-  if (recent.isEmpty) return null;
-  
-  final random = recent[Random().nextInt(recent.length)];
-  return random;
 }

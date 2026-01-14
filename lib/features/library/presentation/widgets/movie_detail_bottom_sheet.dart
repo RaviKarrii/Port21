@@ -10,6 +10,7 @@ import 'package:port21/features/player/application/video_launcher.dart';
 import 'package:port21/core/utils/path_mapper.dart';
 import 'package:port21/features/library/application/library_providers.dart';
 import 'package:port21/features/library/data/library_repository.dart';
+import 'package:port21/core/utils/file_size_formatter.dart';
 
 class MovieDetailBottomSheet extends ConsumerStatefulWidget {
   final Movie movie;
@@ -142,6 +143,10 @@ class _MovieDetailBottomSheetState extends ConsumerState<MovieDetailBottomSheet>
             children: [
               if (widget.movie.year > 0) ...[
                  _buildFlatChip(context, '${widget.movie.year}'),
+                 const SizedBox(width: 8),
+              ],
+              if (targetMovie.sizeOnDisk > 0) ...[
+                 _buildFlatChip(context, FileSizeFormatter.format(targetMovie.sizeOnDisk)),
                  const SizedBox(width: 8),
               ],
               // _buildFlatChip(context, '${widget.movie.runtime} MIN'), // Runtime might not be available in simplified model

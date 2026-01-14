@@ -21,12 +21,17 @@ class RadarrService {
       
       // Fix: Overwrite folder path with actual file path if available
       for (var json in data) {
-         if (json['movieFile'] != null && json['movieFile']['path'] != null) {
-            json['path'] = json['movieFile']['path'];
-            json['hasFile'] = true;
-            print('RadarrService: Overwrote path with ${json['path']}'); 
+         if (json['movieFile'] != null) {
+            if (json['movieFile']['path'] != null) {
+                json['path'] = json['movieFile']['path'];
+                json['hasFile'] = true;
+                // print('RadarrService: Overwrote path with ${json['path']}'); 
+            }
+            if (json['movieFile']['size'] != null) {
+                json['sizeOnDisk'] = json['movieFile']['size'];
+            }
          } else {
-            print('RadarrService: No movieFile for ${json['title']}');
+            // print('RadarrService: No movieFile for ${json['title']}');
          }
       }
 

@@ -72,9 +72,14 @@ class _SeriesDetailBottomSheetState extends ConsumerState<SeriesDetailBottomShee
        if (rootFolders.isEmpty) throw Exception("No Root Folders configured in Sonarr");
        final rootPath = rootFolders.first['path'];
        
+       // Get Quality Profile
+       final profiles = await sonarr.getQualityProfiles();
+       if (profiles.isEmpty) throw Exception("No Quality Profiles configured in Sonarr");
+       final profileId = profiles.first['id'];
+
        // Modify Payload
        payload['rootFolderPath'] = rootPath;
-       payload['qualityProfileId'] = 1; // Default
+       payload['qualityProfileId'] = profileId; // Dynamic
        payload['monitored'] = true;
        payload['addOptions'] = {'searchForMissingEpisodes': true};
        
